@@ -14,18 +14,9 @@
 
 ## 系统架构
 
-浏览器通过 Edge 加载前端、调用 HTTPS API 和建立 WebSocket 连接。下图展示主要调用链，业务服务之间使用 gRPC、Protobuf 和 mTLS。
+浏览器通过项目的 Edge 网关加载前端、调用 HTTPS API 和建立 WebSocket 连接。下图展示主要调用链，业务服务之间使用 gRPC、Protobuf 和 mTLS。
 
-```mermaid
-flowchart LR
-    Browser["浏览器"] -->|"HTTPS / WSS"| Edge["Edge"]
-    Edge -->|"账号与组织 API"| Account["Account"]
-    Edge -->|"文档与搜索 API"| Document["Document"]
-    Edge -->|"协作 WSS"| Collaboration["Collaboration"]
-    Document -->|"身份校验"| Account
-    Document <-->|"协作票据与合并计算"| Collaboration
-    Document <-->|"搜索候选与发布快照"| Search["Search"]
-```
+![系统架构图。浏览器经 Edge 网关访问 Account、Document 和 Collaboration，Document 与 Search 交换查询候选和发布快照。](docs/architecture.svg)
 
 | 服务 | 语言 | 职责 |
 | --- | --- | --- |

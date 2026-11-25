@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1056" height="410" viewBox="0 0 1056 410" role="img" aria-labelledby="title description">
+  <title id="title">协作报告系统架构</title>
+  <desc id="description">浏览器通过 Edge 网关访问账号与组织 API、文档与搜索 API，以及实时协作 WebSocket。Document 向 Account 校验身份，与 Collaboration 处理协作票据和合并，与 Search 交换检索候选和发布快照。</desc>
+  <defs>
+    <marker id="gateway-arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M0 0 L8 4 L0 8 Z" fill="#52675d"/>
+    </marker>
+    <marker id="service-arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 Z" fill="#245b47"/>
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="1054" height="408" rx="17" fill="#f5f8f6" stroke="#d6e1da"/>
+
+  <g fill="none" stroke="#52675d" stroke-width="1.8" marker-end="url(#gateway-arrow)">
+    <path d="M148 210 H256"/>
+    <path d="M376 210 H520"/>
+    <path d="M316 179 V62 Q316 52 326 52 H855"/>
+    <path d="M316 241 V350 Q316 360 326 360 H855"/>
+  </g>
+  <g fill="none" stroke="#245b47" stroke-width="1.8" marker-end="url(#service-arrow)">
+    <path d="M594 179 V90 Q594 80 604 80 H855"/>
+    <path d="M668 210 H855" marker-start="url(#service-arrow)"/>
+    <path d="M594 241 V319 Q594 329 604 329 H855" marker-start="url(#service-arrow)"/>
+  </g>
+
+  <g fill="#fff" stroke="#a9c1b3" stroke-width="1.3">
+    <rect x="24" y="179" width="124" height="62" rx="10"/>
+    <rect x="256" y="179" width="120" height="62" rx="10"/>
+    <rect x="855" y="35" width="177" height="62" rx="10"/>
+    <rect x="855" y="179" width="177" height="62" rx="10"/>
+    <rect x="855" y="315" width="177" height="62" rx="10"/>
+  </g>
+  <rect x="520" y="179" width="148" height="62" rx="10" fill="#e2efe7" stroke="#7aa68c" stroke-width="1.3"/>
+
+  <g text-anchor="middle" font-family="system-ui, 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif">
+    <g fill="#1d3028" font-size="19" font-weight="650">
+      <text x="86" y="206">浏览器</text>
+      <text x="316" y="206">Edge</text>
+      <text x="594" y="206">Document</text>
+      <text x="943.5" y="62">Account</text>
+      <text x="943.5" y="206">Search</text>
+      <text x="943.5" y="342">Collaboration</text>
+    </g>
+    <g fill="#4d6258" font-size="14">
+      <text x="86" y="226">Vue 3</text>
+      <text x="316" y="226">HTTPS 网关</text>
+      <text x="594" y="226">Go</text>
+      <text x="943.5" y="82">Go</text>
+      <text x="943.5" y="226">Go</text>
+      <text x="943.5" y="362">Node.js</text>
+    </g>
+    <g fill="#3c5549" font-size="15">
+      <text x="202" y="198">HTTPS / WSS</text>
+      <text x="448" y="198">文档与搜索 API</text>
+      <text x="623" y="42">账号与组织 API</text>
+      <text x="623" y="350">协作 WSS</text>
+    </g>
+    <g fill="#245b47" font-size="15">
+      <text x="795" y="70">身份校验</text>
+      <text x="761" y="198">搜索候选与发布快照</text>
+      <text x="794" y="319">票据与合并计算</text>
+    </g>
+  </g>
+</svg>
