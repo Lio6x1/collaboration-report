@@ -1,25 +1,12 @@
 # Linux 单机完整 Docker 发行
 
-本文说明现有四服务在 Linux 中的正常完整部署方式。用户目前的服务器是 Ubuntu 24.04、amd64、2 vCPU、2GiB 内存、40GiB 磁盘；这里不据规格承诺可承载的人数或正文规模。应用、数据库、搜索、资源和导出能力均保留。
+本文说明在 Ubuntu 24.04 amd64 上使用 Docker Compose 部署协作报告，包括构建应用镜像、配置 HTTPS 入口、启动四个服务及依赖，以及检查目标实例的就绪状态。
 
-交付顺序是先完成完整教程和现成产品的 Windows 本机体验，用户再按教程从零实现后端、复用前端；用户自己的版本本机全部正常后，才进行实际服务器部署。当前不连接用户服务器、不索取登录凭据。下文服务器命令供这个后续阶段使用。
+## 已验证场景
 
-## 当前证明边界
+2026-10-09 已在独立的 amd64 Linux Docker 实例中验证镜像构建、Compose 启动和整站流程，覆盖双人协作保存、固定审核合并、图片与通知、正式发布、Kafka 消费与索引、浏览器阅读、PDF 导出和回收恢复。
 
-2026-10-09独立Linux容器实例已完成正常启动与代表整站闭环：两人可靠保存、固定审核合并、图片/通知、发布、原Kafka提交与SQL/ES投影、真浏览器阅读、真实固定PDF、回收恢复及永久清理。另在实际RUNNING导出期间终止原Document，监督器/Docker真实重启后同一作业以更高generation完成，校验和与原号重放一致。范围是本机Docker的amd64 Linux发行，不是用户Ubuntu服务器已经部署；Linux一键冷备份/跨机器恢复仍未验证。
-
-现有证据：
-
-- [实际私密准备](../../artifacts/batch09-linux-prepare-01.log)：独立 owner、`PREPARED`，未复制原 Windows 配置。
-- [实际 Compose 静态解析](../../artifacts/batch09-linux-compose-config-01.log)：`COMPOSE_VALID`；不包含展开的口令。
-- [完整镜像构建](../../artifacts/batch09-linux-image-build-03.log)及[镜像内容检查](../../artifacts/batch09-linux-image-build-check-02.log)：Node 24.19.0、Pandoc 3.8、三个 Go 入口，镜像没有运行目录内容、Git 或教材。
-- [首轮 Compose 失败](../../artifacts/batch09-linux-compose-up-01.log)：Redis 未就绪，依赖链拒绝继续。固定 Redis 镜像没有最初采用的 `gosu`；当前入口使用已核验存在的 `/usr/bin/setpriv` 降权，原失败保留。修复本身不能替代后续真实运行结果。
-- [实际整站启动](../../artifacts/batch09-linux-compose-up-04.log)：完整迁移/私有库及ACL核验，实际Canal复制连接屏障后四服务与五依赖就绪。
-- [同一文档完整流程](../../artifacts/batch09-linux-full-workflow-02.log)：六个阶段全部通过，真实Kafka提交及PDF，不靠SQL或健康检查替代业务。
-- [真实Doc退出与原导出恢复](../../artifacts/batch09-linux-export-recovery-02.log)：原RUNNING作业、实际容器重启、更新代次、完整PDF checksum和唯一原号重放通过。
-- [最终真实就绪](../../artifacts/batch09-linux-final-ready-01.log)、[按owner停止且保留卷](../../artifacts/batch09-linux-stop-01.log)：验收后停止本实例，原Windows产品未变。
-
-这些日志位于本机交付工作区，可能被 Git 忽略；源码包只带程序与文档，不承诺包含本机验证日志。第二轮初始化曾把Redis DRYRUN的bulk拒绝说明误判，已按实际帧格式修正；首次整站流程发现64位Canal口令被MySQL复制注册拒绝，已沿原实现生成24位随机hex，并新增真实dump线程屏障。仅此新验证实例的原Canal账号经过原密码归属证明后修正口令，原配置备份私密保存，未删卷/换日志/前移offset。`full-workflow-01`与`compose-up-02`失败保留；`export-recovery-01`是宿主测试适配器的转义错误，尚未注入退出，修正后第二轮才取得真实恢复证据。测试只适配回环连接、容器归属与Linux进程控制，原业务断言保持，未重跑历史A～F或容量矩阵。
+故障恢复验证在导出运行期间停止 Document 进程并触发应用容器重启。同一作业在新的执行代次完成，PDF 校验和与使用原操作号重放的结果一致。部署到目标主机后，按本页步骤检查实际实例。
 
 ## 拓扑与持久事实
 
@@ -132,7 +119,7 @@ $taskWindowsIdentity = (& whoami).Trim()
 icacls "$taskServerPrivateDirectory" /inheritance:r /grant:r "${taskWindowsIdentity}:(OI)(CI)F"
 ```
 
-未来服务器首次准备时，先确认最终使用的域名或地址。下面域名仅为示例，实际部署前替换为用户确定、已经指向该服务器的入口：
+首次部署前确认最终使用的域名或地址，将示例域名替换为已经指向目标服务器的入口。
 
 ```bash
 cd /opt/collaboration-report
@@ -208,7 +195,7 @@ sudo node scripts/server-compose.mjs config --directory /srv/collaboration-repor
 
 已有部署调整SMTP时先用本owner包装器停止应用，在本机编辑 `application/services/account.json`的smtp段和私密凭据，保留其它配置；当前校验会核SMTP公开字段，后续prepare保留既有SMTP段。不要改manifest、DSN、owner或证书来切换发件人。原manifest如果仍启用开发收件器，监督器可能继续启动该本地辅助进程；真正的发件通道以Account配置为准，开发inbox不再是远程邮件的收件位置。没有用于改变这项manifest开关的CLI。
 
-本轮没有执行用户服务器的真实邮件验收；远端仍需实际核验验证码送达、失败和期限，健康检查不能证明公网投递成功。
+配置 SMTP 后，用目标实例验证验证码是否送达、能否在有效期内使用，以及发信失败时的页面提示。
 
 ## 初始化、启动和真实就绪
 
@@ -254,7 +241,7 @@ sudo node scripts/server-compose.mjs initialize --directory /srv/collaboration-r
 
 应用[健康检查](../../scripts/server-health.mjs)访问四角色完整 `/health/ready`响应、Edge前端和必要SMTP banner，同时核对原启动标记。Search ready包含原索引/alias/日志窗口和消费恢复检查，不靠某个“容器Running”状态代替。`up --wait`最多等待300秒；失败返回后可能仍有存活容器，先查看状态与日志，不据超时认定进程结束。
 
-本机Linux的代表性闭环与RUNNING退出恢复已按顶部具名记录通过。用户学习版本后续上自己的服务器时，仍应使用浏览器检查登录、保存、审核/发布、搜索、图片和导出，并复核该实例原数据与任务；本机结果不能替代未来服务器验收。只做受实际部署影响的必要检查，不重跑历史A～F、容量或额外故障矩阵。
+目标实例就绪后，用浏览器依次检查登录、协作保存、审核与发布、搜索、图片和导出。升级已有实例时，同时复核原数据和未完成的任务。
 
 ## 日志与稳定错误
 
@@ -309,5 +296,3 @@ sudo node scripts/server-compose.mjs status --directory /srv/collaboration-repor
 先用包装器status核验归属，再stop并确认应用和全部依赖已经停止，之后才进行冷归档或存储快照。归档目录使用0700、制品0600，保存每个制品的长度/SHA256；备份包含真实私钥、用户内容和口令，不混入源码/镜像发布包。归档完成后，按上一节同目录up恢复原实例。
 
 现有[BACKUP-RESTORE.md](BACKUP-RESTORE.md)及 `scripts/backup.mjs`绑定Windows运行布局，不能直接套用于这个server目录。当前没有已验证的Linux一键备份/跨机器恢复命令。恢复应在全新隔离目标中核验全部摘要，保持原库、索引owner/group、物理日志身份和复制位置，再明确处理部署目录和容器卷的归属绑定；不能在新库里重建同名Kafka主题后沿用旧offset，也不能只复制旧startup.json冒称原进程已结束。Linux完整冷备份、恢复和入口切换需独立验证，当前不声称已通过。
-
-实际服务器部署与公网证书/发信检查，继续等待用户自己的学习版本在本机正常后进行。当前页面的构建、配置和本机Linux容器验证，不能替代该后续服务器验收。

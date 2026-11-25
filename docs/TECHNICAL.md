@@ -1,6 +1,6 @@
 # 协作报告技术说明
 
-协作报告是一个章节级文档协作平台。团队可以共同编辑同一章节，也可以将支线的改动送审后合入主线。正式版本可发布、搜索和导出。浏览器通过同源 HTTPS 入口访问三个 Go 服务和一个 Node.js 服务。
+协作报告是一个采用微服务架构的章节级文档协作平台。团队可以共同编辑同一章节，将支线改动送审后合入主线，并把正式版本发布、检索和导出。浏览器通过同源 HTTPS 和 WebSocket 入口访问三个 Go 服务和一个 Node.js 服务。 [系统架构](../README.md#系统架构)
 
 ## 技术栈
 
@@ -24,7 +24,13 @@
 | [Collaboration](../services/collaboration) | 实时房间、Yjs 增量校验、持久保存、房间恢复和富文本合并计算。 |
 | [Search](../services/search) | 消费发布变更、维护索引、查询候选及重建索引。 |
 
-HTTPS 入口提供前端静态文件，并将 HTTP API 和 WebSocket 请求转给实际服务。内部调用经契约完成。每个服务对自己的数据库负责，搜索索引是由正式版本派生的查询视图。接口定义及生成入口见[契约说明](../contracts/README.md)。
+Edge 提供前端静态文件。账号和组织请求转给 Account，文档与正式版搜索请求转给 Document，编辑用 WebSocket 转给 Collaboration。四个服务按各自权限访问同一个 MySQL 实例中的私有库，内部 gRPC 调用通过 mTLS 验证服务身份。 [接口契约](../contracts/README.md)
+
+- **编辑会话**。Document 校验章节编辑资格后签发票据。Collaboration 通过内部 RPC 兑换票据，建立绑定对应工作区的房间连接。
+- **审核合并**。Document 管理审核状态和版本变更。Collaboration 基于固定输入计算富文本合并候选，Document 校验候选并更新主线。
+- **正式版检索**。Search 消费发布事件，向 Document 读取正式版快照并构建可重建的索引。Document 执行搜索候选的最终资格检查。
+
+Linux 默认部署在同一应用容器中统一启停四个服务和 Edge。Document 与 Collaboration 在共享 PID 命名空间中核验原输出进程是否结束，这是撤权与恢复流程的部署约束。 [Linux 部署拓扑](operations/LINUX.md#拓扑与持久事实)
 
 ## 核心流程
 
