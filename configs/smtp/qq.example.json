@@ -1,0 +1,6 @@
+{
+  "address": "smtp.qq.com:465",
+  "from": "your-sending-mailbox@qq.com",
+  "security": "tls",
+  "credentialsFile": "D:/your-project/collaboration-report/.runtime/private/smtp-credentials.json"
+}

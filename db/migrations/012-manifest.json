@@ -1,0 +1,19 @@
+{
+  "version": 12,
+  "parentSHA256": "33440233b685c340cb046abf388017598c6f4a9781cfe24a58589c54b8909c51",
+  "sha256": "2f1a07cb43568f8b89ec9e16ef849dce98ef86d544a2a7e11851e3fc61f08442",
+  "checks": [
+    {
+      "database": "document_db",
+      "table": "export_budget",
+      "before": {
+        "name": "export_budget_chk_2",
+        "expression": "reserved_bytes<=268435456 AND used_bytes<=268435456"
+      },
+      "after": {
+        "name": "export_pool_budget_bounds",
+        "expression": "reserved_bytes<=2147483648 AND used_bytes<=2147483648"
+      }
+    }
+  ]
+}

@@ -1,0 +1,1838 @@
+-- v001; MySQL 8.0.46/InnoDB; fresh installation only. UTC connection time_zone required.
+
+SET NAMES utf8mb4;
+
+SET time_zone = '+00:00';
+
+CREATE DATABASE account_db CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+
+USE account_db;
+
+CREATE TABLE schema_migration(version INT UNSIGNED PRIMARY KEY,checksum BINARY(32) NOT NULL,applied_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)) ENGINE=InnoDB;
+
+CREATE TABLE `user` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  email VARCHAR(254) NULL,
+  email_key VARBINARY(254) NULL,
+  display_name VARCHAR(100) NOT NULL,
+  password_hash VARBINARY(255) NULL,
+  password_algorithm VARCHAR(32) NULL,
+  state VARCHAR(20) NOT NULL,
+  credential_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  identity_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  email_verified_at DATETIME(6) NULL,
+  closed_at DATETIME(6) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY user_email(email_key),
+  INDEX user_state(state,id),
+  CHECK (state IN ('PENDING','ACTIVE','REVOKING','CLOSED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `session` (
+  id BINARY(32) NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  csrf_hash BINARY(32) NOT NULL,
+  credential_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  state VARCHAR(16) NOT NULL,
+  expires_at DATETIME(6) NOT NULL,
+  last_seen_at DATETIME(6) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  INDEX session_user(user_id,state,id),
+  INDEX session_expiry(state,expires_at),
+  CHECK (state IN ('ACTIVE','REVOKING','CLOSED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `verification_consumption` (
+  challenge_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  purpose VARCHAR(24) NOT NULL,
+  subject_key BINARY(32) NOT NULL,
+  user_id BIGINT UNSIGNED NULL,
+  credential_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  consumed_at DATETIME(6) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(challenge_id),
+  INDEX consumed_subject(subject_key,purpose,consumed_at),
+  CHECK (purpose IN ('SIGNUP','RESET_PASSWORD','CHANGE_EMAIL'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `organization` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(160) NOT NULL,
+  owner_id BIGINT UNSIGNED NOT NULL,
+  lifecycle VARCHAR(20) NOT NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  member_revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  event_seq BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  closed_at DATETIME(6) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  INDEX org_owner(owner_id,id),
+  CHECK (lifecycle IN ('ACTIVE','CLOSING','CLOSED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `organization_member` (
+  organization_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  role VARCHAR(16) NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(organization_id,user_id),
+  INDEX member_user(user_id,state,organization_id),
+  CHECK (role IN ('MEMBER','ADMIN')),
+  CHECK (state IN ('ACTIVE','REVOKING','CLOSED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `organization_invitation` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  organization_id BIGINT UNSIGNED NOT NULL,
+  inviter_id BIGINT UNSIGNED NOT NULL,
+  token_hash BINARY(32) NOT NULL,
+  token_ciphertext VARBINARY(512) NOT NULL,
+  token_key_id VARCHAR(64) NOT NULL,
+  state VARCHAR(20) NOT NULL,
+  expires_at DATETIME(6) NOT NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY invitation_token(token_hash),
+  UNIQUE KEY invitation_scope(id,organization_id),
+  INDEX invitation_page(organization_id,state,id),
+  CHECK (state IN ('OPEN','CLOSED','EXPIRED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `organization_application` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  organization_id BIGINT UNSIGNED NOT NULL,
+  applicant_id BIGINT UNSIGNED NOT NULL,
+  source_invitation_id BIGINT UNSIGNED NULL,
+  invitation_valid_at_submit BOOLEAN NULL,
+  invitation_validated_at DATETIME(6) NULL,
+  reason VARCHAR(2000) NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  reviewer_id BIGINT UNSIGNED NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  INDEX application_pending(organization_id,state,id),
+  INDEX application_user(applicant_id,id),
+  CHECK (state IN ('PENDING','ACCEPTED','REJECTED','CANCELLED')),
+  CHECK ((source_invitation_id IS NULL AND invitation_valid_at_submit IS NULL AND invitation_validated_at IS NULL) OR (source_invitation_id IS NOT NULL AND invitation_valid_at_submit IS TRUE AND invitation_validated_at IS NOT NULL))
+) ENGINE=InnoDB;
+
+CREATE TABLE `organization_creation_grant` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  organization_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  capability VARCHAR(24) NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY creation_grant(organization_id,user_id,capability),
+  CHECK (capability IN ('CREATE_KNOWLEDGE_BASE')),
+  CHECK (state IN ('ACTIVE','CLOSED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `identity_admission` (
+  admission_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  actor_id BIGINT UNSIGNED NOT NULL,
+  session_id BINARY(32) NOT NULL,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  purpose VARCHAR(40) NOT NULL,
+  target_json JSON NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  expires_at DATETIME(6) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(admission_id),
+  INDEX admission_actor(actor_id,state,admission_id),
+  INDEX admission_operation(operation_id),
+  CHECK (state IN ('OPEN','CLOSED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `admission_source` (
+  admission_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(admission_id,scope_key),
+  INDEX admission_source_reverse(scope_key,epoch,admission_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `account_close` (
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  state VARCHAR(24) NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  retention_plan JSON NULL,
+  retry_at DATETIME(6) NULL,
+  last_error VARCHAR(64) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(operation_id),
+  INDEX account_close_user(user_id,state),
+  INDEX account_close_due(state,retry_at),
+  CHECK (state IN ('PREPARING','FROZEN','PLANNED','CLEANING','SUCCEEDED','REJECTED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `organization_transition` (
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  organization_id BIGINT UNSIGNED NOT NULL,
+  actor_id BIGINT UNSIGNED NOT NULL,
+  target_user_id BIGINT UNSIGNED NULL,
+  kind VARCHAR(24) NOT NULL,
+  expected_revision BIGINT UNSIGNED NOT NULL,
+  state VARCHAR(24) NOT NULL,
+  fixed_plan JSON NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(operation_id),
+  INDEX organization_transition_state(organization_id,state),
+  CHECK (kind IN ('TRANSFER_OWNER','LEAVE','CLOSE','ROLE_CHANGE')),
+  CHECK (state IN ('PREPARING','FENCING','APPLIED','SUCCEEDED','REJECTED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `operation_receipt` (
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  actor_id BIGINT UNSIGNED NOT NULL,
+  kind VARCHAR(40) NOT NULL,
+  target_json JSON NOT NULL,
+  request_fingerprint BINARY(32) NOT NULL,
+  state VARCHAR(24) NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  identity_admission_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  result_json JSON NULL,
+  expires_at DATETIME(6) NOT NULL,
+  terminal_at DATETIME(6) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(operation_id),
+  INDEX operation_actor(actor_id,created_at,operation_id),
+  INDEX operation_due(state,expires_at),
+  CHECK (state IN ('PREPARING','SUCCEEDED','REJECTED','CANCELLED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `durable_task` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  kind VARCHAR(40) NOT NULL,
+  business_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  payload JSON NOT NULL,
+  state VARCHAR(20) NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  instance_id VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  lease_until DATETIME(6) NULL,
+  retry_at DATETIME(6) NOT NULL,
+  attempts INT UNSIGNED NOT NULL DEFAULT 0,
+  last_error VARCHAR(64) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY task_business(kind,business_key),
+  INDEX task_due(state,retry_at,id),
+  CHECK (state IN ('QUEUED','RUNNING','RETRY','SUCCEEDED','REJECTED','UNKNOWN'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `access_gate` (
+  scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  max_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  state VARCHAR(16) NOT NULL,
+  last_revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(scope_key),
+  CHECK (state IN ('OPEN','BLOCKED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `authorization_change` (
+  revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  actor_id BIGINT UNSIGNED NULL,
+  scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  target_permission JSON NOT NULL,
+  state VARCHAR(20) NOT NULL,
+  participant_plan JSON NOT NULL,
+  retry_at DATETIME(6) NULL,
+  last_error VARCHAR(64) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(revocation_id),
+  UNIQUE KEY auth_scope_epoch(scope_key,epoch),
+  INDEX auth_due(state,retry_at),
+  CHECK (state IN ('PREPARING','FROZEN','FENCING','SUCCEEDED','REJECTED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `authorization_ack` (
+  revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  participant VARCHAR(40) NOT NULL,
+  scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  phase VARCHAR(24) NOT NULL,
+  result_digest BINARY(32) NOT NULL,
+  completed_at DATETIME(6) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(revocation_id,participant,scope_key)
+) ENGINE=InnoDB;
+
+CREATE TABLE `outbox` (
+  event_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  aggregate_kind VARCHAR(24) NOT NULL,
+  aggregate_id BIGINT UNSIGNED NOT NULL,
+  aggregate_seq BIGINT UNSIGNED NOT NULL,
+  event_type VARCHAR(48) NOT NULL,
+  schema_version VARCHAR(24) NOT NULL,
+  payload JSON NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(event_id),
+  UNIQUE KEY event_order(aggregate_kind,aggregate_id,aggregate_seq),
+  INDEX event_created(created_at,event_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `notification` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  recipient_id BIGINT UNSIGNED NOT NULL,
+  event_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  kind VARCHAR(40) NOT NULL,
+  target_json JSON NOT NULL,
+  read_at DATETIME(6) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY notification_dedupe(recipient_id,event_id,kind),
+  INDEX notification_page(recipient_id,id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `audit_event` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  actor_id BIGINT UNSIGNED NULL,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  item_no INT UNSIGNED NOT NULL,
+  kind VARCHAR(40) NOT NULL,
+  target_json JSON NOT NULL,
+  before_json JSON NULL,
+  after_json JSON NULL,
+  reason VARCHAR(2000) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY audit_operation(operation_id,item_no),
+  INDEX audit_actor(actor_id,id)
+) ENGINE=InnoDB;
+
+CREATE DATABASE document_db CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+
+USE document_db;
+
+CREATE TABLE schema_migration(version INT UNSIGNED PRIMARY KEY,checksum BINARY(32) NOT NULL,applied_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)) ENGINE=InnoDB;
+
+CREATE TABLE `space` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  kind VARCHAR(16) NOT NULL,
+  account_owner_id BIGINT UNSIGNED NULL,
+  organization_id BIGINT UNSIGNED NULL,
+  lifecycle VARCHAR(20) NOT NULL,
+  quota_revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  CHECK (kind IN ('PERSONAL','ORGANIZATION')),
+  CHECK (lifecycle IN ('ACTIVE','CLOSING','PUBLIC_RETAINED','CLOSED')),
+  CHECK ((kind='PERSONAL' AND account_owner_id IS NOT NULL AND organization_id IS NULL) OR (kind='ORGANIZATION' AND organization_id IS NOT NULL AND account_owner_id IS NULL))
+) ENGINE=InnoDB;
+
+CREATE TABLE `knowledge_base` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  space_id BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(160) NOT NULL,
+  lifecycle VARCHAR(20) NOT NULL,
+  visibility_policy VARCHAR(24) NOT NULL DEFAULT 'COLLABORATORS',
+  visibility_revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  acl_revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY kb_space(id,space_id),
+  INDEX kb_page(space_id,lifecycle,id),
+  CHECK (lifecycle IN ('ACTIVE','CLOSING','PUBLIC_RETAINED','CLOSED')),
+  CHECK (visibility_policy IN ('PUBLIC','SPACE_MEMBERS','COLLABORATORS'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `knowledge_base_member` (
+  knowledge_base_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  role VARCHAR(24) NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(knowledge_base_id,user_id),
+  INDEX kb_member_user(user_id,state,knowledge_base_id),
+  CHECK (role IN ('MEMBER','ADMIN')),
+  CHECK (state IN ('ACTIVE','REVOKING','CLOSED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `knowledge_base_creation_grant` (
+  knowledge_base_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(knowledge_base_id,user_id),
+  CHECK (state IN ('ACTIVE','CLOSED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `admin_retirement` (
+  knowledge_base_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(knowledge_base_id,user_id),
+  INDEX retirement_operation(operation_id),
+  CHECK (state IN ('RESERVED','APPLIED','CANCELLED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `document` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  space_id BIGINT UNSIGNED NOT NULL,
+  knowledge_base_id BIGINT UNSIGNED NULL,
+  responsible_user_id BIGINT UNSIGNED NULL,
+  title VARCHAR(240) NOT NULL,
+  visibility_policy VARCHAR(24) NOT NULL DEFAULT 'COLLABORATORS',
+  visibility_revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  lifecycle VARCHAR(20) NOT NULL,
+  main_locked BOOLEAN NOT NULL DEFAULT TRUE,
+  current_structure_id BIGINT UNSIGNED NULL,
+  current_style_id BIGINT UNSIGNED NULL,
+  current_manifest_id BIGINT UNSIGNED NULL,
+  current_release_id BIGINT UNSIGNED NULL,
+  publication_state VARCHAR(16) NOT NULL,
+  publication_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  control_revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  acl_revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  event_seq BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  deleted_at DATETIME(6) NULL,
+  purge_after DATETIME(6) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY document_space(id,space_id),
+  INDEX document_kb(knowledge_base_id,lifecycle,id),
+  INDEX document_owner(responsible_user_id,lifecycle,id),
+  INDEX document_trash(lifecycle,purge_after,id),
+  CHECK (lifecycle IN ('INITIALIZING','ACTIVE','TRASHED','CLOSING','PUBLIC_RETAINED','PURGED')),
+  CHECK (visibility_policy IN ('PUBLIC','SPACE_MEMBERS','COLLABORATORS')),
+  CHECK (publication_state IN ('UNPUBLISHED','PUBLISHED')),
+  CHECK ((publication_state='PUBLISHED' AND current_release_id IS NOT NULL) OR (publication_state='UNPUBLISHED' AND current_release_id IS NULL))
+) ENGINE=InnoDB;
+
+CREATE TABLE `structure_revision` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  document_id BIGINT UNSIGNED NOT NULL,
+  parent_id BIGINT UNSIGNED NULL,
+  source_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  schema_version VARCHAR(24) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY structure_doc(id,document_id),
+  UNIQUE KEY structure_operation(document_id,source_operation_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `style_revision` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  document_id BIGINT UNSIGNED NOT NULL,
+  parent_id BIGINT UNSIGNED NULL,
+  style_json JSON NOT NULL,
+  schema_version VARCHAR(24) NOT NULL,
+  source_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY style_doc(id,document_id),
+  UNIQUE KEY style_operation(document_id,source_operation_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `chapter` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  document_id BIGINT UNSIGNED NOT NULL,
+  created_structure_id BIGINT UNSIGNED NOT NULL,
+  retired_structure_id BIGINT UNSIGNED NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY chapter_doc(id,document_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `collaboration_unit` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  document_id BIGINT UNSIGNED NOT NULL,
+  chapter_id BIGINT UNSIGNED NOT NULL,
+  kind VARCHAR(16) NOT NULL,
+  created_structure_id BIGINT UNSIGNED NOT NULL,
+  retired_structure_id BIGINT UNSIGNED NULL,
+  active_branch_id BIGINT UNSIGNED NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY unit_doc(id,document_id),
+  INDEX unit_chapter(chapter_id,id),
+  CHECK (kind IN ('CHAPTER','INTRODUCTION','SECTION'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `structure_entry` (
+  structure_id BIGINT UNSIGNED NOT NULL,
+  document_id BIGINT UNSIGNED NOT NULL,
+  node_id BIGINT UNSIGNED NOT NULL,
+  parent_node_id BIGINT UNSIGNED NULL,
+  parent_sort_key BIGINT UNSIGNED GENERATED ALWAYS AS (COALESCE(parent_node_id,0)) STORED,
+  chapter_id BIGINT UNSIGNED NOT NULL,
+  kind VARCHAR(16) NOT NULL,
+  title VARCHAR(240) NOT NULL,
+  sort_order INT UNSIGNED NOT NULL,
+  unit_id BIGINT UNSIGNED NULL,
+  split_mode BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(structure_id,node_id),
+  UNIQUE KEY structure_order(structure_id,parent_sort_key,sort_order),
+  UNIQUE KEY structure_unit(structure_id,unit_id),
+  CHECK (kind IN ('CHAPTER','INTRODUCTION','SECTION'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `content_grant` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  document_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  scope_kind VARCHAR(16) NOT NULL,
+  scope_id BIGINT UNSIGNED NOT NULL,
+  capability VARCHAR(16) NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY content_grant_scope(document_id,user_id,scope_kind,scope_id,capability),
+  INDEX grant_user(user_id,document_id,state),
+  CHECK (scope_kind IN ('DOCUMENT','CHAPTER','UNIT')),
+  CHECK (capability IN ('EDIT','REVIEW','COMMENT','MANAGE')),
+  CHECK (state IN ('ACTIVE','REVOKING','CLOSED')),
+  CHECK ((capability='EDIT') OR scope_kind='DOCUMENT')
+) ENGINE=InnoDB;
+
+CREATE TABLE `content_version` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  document_id BIGINT UNSIGNED NOT NULL,
+  unit_id BIGINT UNSIGNED NOT NULL,
+  structure_id BIGINT UNSIGNED NOT NULL,
+  body_json JSON NOT NULL,
+  canonical_body LONGBLOB NOT NULL,
+  body_hash BINARY(32) NOT NULL,
+  schema_version VARCHAR(24) NOT NULL,
+  canonicalization_version VARCHAR(24) NOT NULL,
+  byte_size BIGINT UNSIGNED NOT NULL,
+  source_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  source_kind VARCHAR(24) NOT NULL,
+  source_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  provenance_json JSON NOT NULL,
+  provenance_schema VARCHAR(24) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY version_doc(id,document_id),
+  UNIQUE KEY version_unit(id,unit_id,document_id),
+  UNIQUE KEY version_product(source_operation_id,source_kind,source_ref),
+  INDEX version_history(unit_id,id),
+  CHECK (source_kind IN ('INITIAL','SUBMISSION','MERGE','MAIN_CAPTURE','STRUCTURE','RESTORE','REVERSE'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `main_manifest` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  document_id BIGINT UNSIGNED NOT NULL,
+  parent_id BIGINT UNSIGNED NULL,
+  structure_id BIGINT UNSIGNED NOT NULL,
+  style_id BIGINT UNSIGNED NOT NULL,
+  source_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  product_key VARCHAR(32) NOT NULL,
+  reliable_cut_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY manifest_doc(id,document_id),
+  UNIQUE KEY manifest_product(document_id,source_operation_id,product_key)
+) ENGINE=InnoDB;
+
+CREATE TABLE `manifest_entry` (
+  manifest_id BIGINT UNSIGNED NOT NULL,
+  document_id BIGINT UNSIGNED NOT NULL,
+  unit_id BIGINT UNSIGNED NOT NULL,
+  content_version_id BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(manifest_id,unit_id),
+  INDEX manifest_version(content_version_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `branch` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  document_id BIGINT UNSIGNED NOT NULL,
+  unit_id BIGINT UNSIGNED NOT NULL,
+  lifecycle VARCHAR(16) NOT NULL,
+  initial_base_version_id BIGINT UNSIGNED NOT NULL,
+  current_lineage_id BIGINT UNSIGNED NULL,
+  workspace_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY branch_unit(id,unit_id,document_id),
+  INDEX branch_history(unit_id,id),
+  CHECK (lifecycle IN ('PREPARING','ACTIVE','RESTORING','RETIRED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `branch_lineage` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  branch_id BIGINT UNSIGNED NOT NULL,
+  unit_id BIGINT UNSIGNED NOT NULL,
+  document_id BIGINT UNSIGNED NOT NULL,
+  previous_id BIGINT UNSIGNED NULL,
+  event_kind VARCHAR(24) NOT NULL,
+  source_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  base_manifest_id BIGINT UNSIGNED NOT NULL,
+  base_version_id BIGINT UNSIGNED NOT NULL,
+  capture_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  provenance_json JSON NOT NULL,
+  provenance_schema VARCHAR(24) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY lineage_branch(id,branch_id),
+  UNIQUE KEY lineage_operation(branch_id,source_operation_id,event_kind),
+  CHECK (event_kind IN ('CREATED','PULL_MAIN','ACCEPTED_CUT','RESTORED','DISCARDED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `unit_lineage` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  source_unit_id BIGINT UNSIGNED NOT NULL,
+  target_unit_id BIGINT UNSIGNED NOT NULL,
+  source_document_id BIGINT UNSIGNED NOT NULL,
+  target_document_id BIGINT UNSIGNED NOT NULL,
+  source_version_id BIGINT UNSIGNED NOT NULL,
+  target_version_id BIGINT UNSIGNED NOT NULL,
+  block_mapping JSON NOT NULL,
+  mapping_schema VARCHAR(24) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY unit_mapping(operation_id,source_unit_id,target_unit_id),
+  CHECK (source_document_id=target_document_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `review_request` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  document_id BIGINT UNSIGNED NOT NULL,
+  unit_id BIGINT UNSIGNED NOT NULL,
+  branch_id BIGINT UNSIGNED NOT NULL,
+  status VARCHAR(16) NOT NULL,
+  current_round_id BIGINT UNSIGNED NULL,
+  active_merge_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  archived_at DATETIME(6) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY request_unit(id,unit_id),
+  UNIQUE KEY request_doc(id,document_id),
+  INDEX request_list(document_id,status,id),
+  INDEX request_history(unit_id,id),
+  CHECK (status IN ('REVIEWING','WITHDRAWN','MERGED')),
+  CHECK (archived_at IS NULL OR status='WITHDRAWN')
+) ENGINE=InnoDB;
+
+CREATE TABLE `review_round` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  request_id BIGINT UNSIGNED NOT NULL,
+  document_id BIGINT UNSIGNED NOT NULL,
+  unit_id BIGINT UNSIGNED NOT NULL,
+  round_no INT UNSIGNED NOT NULL,
+  content_version_id BIGINT UNSIGNED NOT NULL,
+  base_manifest_id BIGINT UNSIGNED NOT NULL,
+  base_version_id BIGINT UNSIGNED NOT NULL,
+  structure_id BIGINT UNSIGNED NOT NULL,
+  lineage_id BIGINT UNSIGNED NOT NULL,
+  capture_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  submitter_id BIGINT UNSIGNED NOT NULL,
+  submission_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY round_request(id,request_id),
+  UNIQUE KEY round_number(request_id,round_no),
+  UNIQUE KEY round_submission(submission_operation_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `request_submitter` (
+  request_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  first_round_id BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(request_id,user_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `review_action` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  request_id BIGINT UNSIGNED NOT NULL,
+  round_id BIGINT UNSIGNED NOT NULL,
+  actor_id BIGINT UNSIGNED NOT NULL,
+  kind VARCHAR(24) NOT NULL,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  item_no INT UNSIGNED NOT NULL,
+  reason VARCHAR(2000) NULL,
+  target_change_id BIGINT UNSIGNED NULL,
+  content_version_id BIGINT UNSIGNED NULL,
+  merge_record_id BIGINT UNSIGNED NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY action_operation(operation_id,item_no),
+  UNIQUE KEY action_request(id,request_id),
+  INDEX action_history(request_id,id),
+  CHECK (kind IN ('REQUEST_CHANGES','RESOLVE_CHANGES','WITHDRAW','APPROVE_AND_MERGE','ARCHIVE')),
+  CHECK (kind<>'APPROVE_AND_MERGE' OR merge_record_id IS NOT NULL),
+  CHECK (kind NOT IN ('REQUEST_CHANGES','RESOLVE_CHANGES') OR (reason IS NOT NULL AND CHAR_LENGTH(reason)>0))
+) ENGINE=InnoDB;
+
+CREATE TABLE `change_request` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  request_id BIGINT UNSIGNED NOT NULL,
+  origin_round_id BIGINT UNSIGNED NOT NULL,
+  created_action_id BIGINT UNSIGNED NOT NULL,
+  author_id BIGINT UNSIGNED NOT NULL,
+  status VARCHAR(16) NOT NULL,
+  resolved_action_id BIGINT UNSIGNED NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY change_request_scope(id,request_id),
+  INDEX changes_open(request_id,status,id),
+  CHECK (status IN ('OPEN','RESOLVED')),
+  CHECK ((status='OPEN' AND resolved_action_id IS NULL) OR (status='RESOLVED' AND resolved_action_id IS NOT NULL))
+) ENGINE=InnoDB;
+
+CREATE TABLE `unit_review_guard` (
+  unit_id BIGINT UNSIGNED NOT NULL,
+  ongoing_request_id BIGINT UNSIGNED NULL,
+  resumable_request_id BIGINT UNSIGNED NULL,
+  submission_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(unit_id),
+  CHECK (ongoing_request_id IS NULL OR resumable_request_id IS NULL)
+) ENGINE=InnoDB;
+
+CREATE TABLE `operation_receipt` (
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  actor_id BIGINT UNSIGNED NOT NULL,
+  kind VARCHAR(40) NOT NULL,
+  target_json JSON NOT NULL,
+  request_fingerprint BINARY(32) NOT NULL,
+  state VARCHAR(24) NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  identity_admission_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  result_json JSON NULL,
+  expires_at DATETIME(6) NOT NULL,
+  terminal_at DATETIME(6) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(operation_id),
+  INDEX operation_actor(actor_id,created_at,operation_id),
+  INDEX operation_due(state,expires_at),
+  CHECK (state IN ('PREPARING','SUCCEEDED','REJECTED','CANCELLED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `submission_operation` (
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  actor_id BIGINT UNSIGNED NOT NULL,
+  document_id BIGINT UNSIGNED NOT NULL,
+  unit_id BIGINT UNSIGNED NOT NULL,
+  branch_id BIGINT UNSIGNED NOT NULL,
+  request_id BIGINT UNSIGNED NULL,
+  expected_round_id BIGINT UNSIGNED NULL,
+  state VARCHAR(16) NOT NULL,
+  guard_generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  capture_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  flush_receipt_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  lineage_id BIGINT UNSIGNED NOT NULL,
+  result_round_id BIGINT UNSIGNED NULL,
+  retry_at DATETIME(6) NULL,
+  last_error VARCHAR(64) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(operation_id),
+  UNIQUE KEY submission_unit(operation_id,unit_id),
+  INDEX submission_due(state,retry_at),
+  CHECK (state IN ('PREPARING','CAPTURED','SUCCEEDED','REJECTED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `merge_operation` (
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  actor_id BIGINT UNSIGNED NOT NULL,
+  request_id BIGINT UNSIGNED NOT NULL,
+  round_id BIGINT UNSIGNED NOT NULL,
+  content_version_id BIGINT UNSIGNED NOT NULL,
+  own_changes_to_resolve JSON NOT NULL,
+  state VARCHAR(20) NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  result_merge_id BIGINT UNSIGNED NULL,
+  retry_at DATETIME(6) NULL,
+  last_error VARCHAR(64) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(operation_id),
+  UNIQUE KEY merge_operation_request(operation_id,request_id),
+  INDEX merge_due(state,retry_at),
+  CHECK (state IN ('PREPARING','COMPUTING','PREPARED','SUCCEEDED','REJECTED','CANCELLED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `merge_attempt` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  attempt_no INT UNSIGNED NOT NULL,
+  base_version_id BIGINT UNSIGNED NOT NULL,
+  submitted_version_id BIGINT UNSIGNED NOT NULL,
+  main_manifest_id BIGINT UNSIGNED NOT NULL,
+  main_cut_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  structure_id BIGINT UNSIGNED NOT NULL,
+  style_id BIGINT UNSIGNED NOT NULL,
+  lineage_id BIGINT UNSIGNED NOT NULL,
+  candidate_version_id BIGINT UNSIGNED NULL,
+  conflict_json JSON NULL,
+  input_digest BINARY(32) NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY attempt_operation(id,operation_id),
+  UNIQUE KEY attempt_number(operation_id,attempt_no),
+  CHECK (state IN ('FIXED','COMPUTED','CONFLICT','SUPERSEDED','COMMITTED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `merge_record` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  request_id BIGINT UNSIGNED NOT NULL,
+  round_id BIGINT UNSIGNED NOT NULL,
+  attempt_id BIGINT UNSIGNED NOT NULL,
+  approval_action_id BIGINT UNSIGNED NULL,
+  input_manifest_id BIGINT UNSIGNED NOT NULL,
+  output_manifest_id BIGINT UNSIGNED NOT NULL,
+  result_version_id BIGINT UNSIGNED NOT NULL,
+  accepted_capture_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  lineage_id BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY merged_operation(operation_id),
+  UNIQUE KEY merged_request(request_id),
+  UNIQUE KEY merge_record_request(id,request_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `main_commit_barrier` (
+  document_id BIGINT UNSIGNED NOT NULL,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  phase VARCHAR(16) NOT NULL,
+  expected_cut JSON NULL,
+  prepared_cut JSON NULL,
+  target_manifest_id BIGINT UNSIGNED NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(document_id),
+  CHECK (phase IN ('OPEN','PREPARING','PREPARED','INSTALLING','UNKNOWN'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `release` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  document_id BIGINT UNSIGNED NOT NULL,
+  manifest_id BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(240) NOT NULL,
+  publisher_id BIGINT UNSIGNED NOT NULL,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY release_doc(id,document_id),
+  UNIQUE KEY release_operation(operation_id),
+  INDEX release_history(document_id,id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `resource` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  space_id BIGINT UNSIGNED NOT NULL,
+  uploader_id BIGINT UNSIGNED NULL,
+  storage_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  checksum BINARY(32) NULL,
+  byte_size BIGINT UNSIGNED NOT NULL,
+  media_type VARCHAR(100) NOT NULL,
+  state VARCHAR(20) NOT NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  upload_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY resource_storage(storage_key),
+  UNIQUE KEY resource_upload(upload_operation_id),
+  INDEX resource_state(space_id,state,id),
+  CHECK (state IN ('UPLOADING','READY','DELETING','DELETED','UNKNOWN'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `resource_reference` (
+  resource_id BIGINT UNSIGNED NOT NULL,
+  document_id BIGINT UNSIGNED NULL,
+  owner_kind VARCHAR(24) NOT NULL,
+  owner_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  purpose VARCHAR(24) NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(resource_id,owner_kind,owner_ref,purpose),
+  INDEX resource_owner(owner_kind,owner_ref),
+  INDEX resource_document(document_id,resource_id),
+  CHECK (owner_kind IN ('DRAFT','VERSION','MANIFEST','RELEASE','CAPTURE','EXPORT','RETENTION','OPERATION'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `resource_protection` (
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  document_id BIGINT UNSIGNED NOT NULL,
+  room_id BIGINT UNSIGNED NOT NULL,
+  grant_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  workspace_epoch BIGINT UNSIGNED NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  request_fingerprint BINARY(32) NOT NULL,
+  resource_ids JSON NOT NULL,
+  source_epochs JSON NOT NULL,
+  state VARCHAR(20) NOT NULL,
+  node_receipt_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  durable_seq BIGINT UNSIGNED NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(operation_id),
+  INDEX protection_room(document_id,room_id,state),
+  CHECK (state IN ('PROTECTED','CONFIRMED','RELEASED','UNKNOWN'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `document_invitation` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  document_id BIGINT UNSIGNED NOT NULL,
+  inviter_id BIGINT UNSIGNED NOT NULL,
+  token_hash BINARY(32) NOT NULL,
+  token_ciphertext VARBINARY(512) NOT NULL,
+  token_key_id VARCHAR(64) NOT NULL,
+  requested_grants JSON NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  expires_at DATETIME(6) NOT NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY doc_invitation_token(token_hash),
+  UNIQUE KEY doc_invitation_scope(id,document_id),
+  INDEX doc_invitation_page(document_id,state,id),
+  CHECK (state IN ('OPEN','CLOSED','EXPIRED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `document_application` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  document_id BIGINT UNSIGNED NOT NULL,
+  invitation_id BIGINT UNSIGNED NOT NULL,
+  applicant_id BIGINT UNSIGNED NOT NULL,
+  requested_grants JSON NOT NULL,
+  invitation_valid_at_submit BOOLEAN NOT NULL,
+  invitation_validated_at DATETIME(6) NOT NULL,
+  reason VARCHAR(2000) NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  reviewer_id BIGINT UNSIGNED NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  INDEX doc_application_page(document_id,state,id),
+  INDEX doc_application_user(applicant_id,id),
+  CHECK (state IN ('PENDING','ACCEPTED','REJECTED','CANCELLED')),
+  CHECK (invitation_valid_at_submit=TRUE)
+) ENGINE=InnoDB;
+
+CREATE TABLE `quota_account` (
+  space_id BIGINT UNSIGNED NOT NULL,
+  limit_bytes BIGINT UNSIGNED NOT NULL,
+  used_bytes BIGINT UNSIGNED NOT NULL,
+  reserved_bytes BIGINT UNSIGNED NOT NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(space_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `quota_reservation` (
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  space_id BIGINT UNSIGNED NOT NULL,
+  bytes BIGINT UNSIGNED NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  expires_at DATETIME(6) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(operation_id),
+  INDEX quota_expiry(state,expires_at),
+  CHECK (state IN ('RESERVED','COMMITTED','RELEASED','UNKNOWN'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `temporary_budget` (
+  kind VARCHAR(24) NOT NULL,
+  limit_bytes BIGINT UNSIGNED NOT NULL,
+  reserved_bytes BIGINT UNSIGNED NOT NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(kind)
+) ENGINE=InnoDB;
+
+CREATE TABLE `comment_thread` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  document_id BIGINT UNSIGNED NOT NULL,
+  context_kind VARCHAR(16) NOT NULL,
+  context_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  content_version_id BIGINT UNSIGNED NULL,
+  anchor_json JSON NOT NULL,
+  anchor_schema VARCHAR(24) NOT NULL,
+  author_id BIGINT UNSIGNED NOT NULL,
+  status VARCHAR(16) NOT NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  INDEX comment_context(document_id,context_kind,context_ref,id),
+  CHECK (context_kind IN ('MAIN','BRANCH','REVIEW')),
+  CHECK (status IN ('OPEN','RESOLVED','DELETED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `comment` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  thread_id BIGINT UNSIGNED NOT NULL,
+  author_id BIGINT UNSIGNED NOT NULL,
+  reply_to_id BIGINT UNSIGNED NULL,
+  body VARCHAR(8000) NOT NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  deleted_at DATETIME(6) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY comment_thread_scope(id,thread_id),
+  INDEX comment_page(thread_id,id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `export_job` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  requester_id BIGINT UNSIGNED NULL,
+  document_id BIGINT UNSIGNED NOT NULL,
+  manifest_id BIGINT UNSIGNED NOT NULL,
+  release_id BIGINT UNSIGNED NULL,
+  target_kind VARCHAR(16) NOT NULL,
+  format VARCHAR(16) NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  artifact_resource_id BIGINT UNSIGNED NULL,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  retry_at DATETIME(6) NULL,
+  last_error VARCHAR(64) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY export_operation(operation_id),
+  INDEX export_due(state,retry_at,id),
+  CHECK (target_kind IN ('MAIN','PUBLIC')),
+  CHECK (format IN ('DOCX','MARKDOWN','PDF')),
+  CHECK (state IN ('QUEUED','RUNNING','SUCCEEDED','REJECTED','CANCELLED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `lifecycle_operation` (
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  actor_id BIGINT UNSIGNED NULL,
+  kind VARCHAR(24) NOT NULL,
+  state VARCHAR(24) NOT NULL,
+  expected_revision BIGINT UNSIGNED NOT NULL,
+  fixed_plan JSON NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  retry_at DATETIME(6) NULL,
+  last_error VARCHAR(64) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(operation_id),
+  INDEX lifecycle_due(state,retry_at),
+  CHECK (kind IN ('TRASH','RESTORE','PURGE','OWNER_CHANGE','ACCOUNT_CLOSE','ORGANIZATION_CLOSE')),
+  CHECK (state IN ('PREPARING','FROZEN','PLANNED','CLEANING','SUCCEEDED','REJECTED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `read_view` (
+  view_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  document_id BIGINT UNSIGNED NOT NULL,
+  manifest_id BIGINT UNSIGNED NOT NULL,
+  admission_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  expires_at DATETIME(6) NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(view_id),
+  INDEX view_expiry(state,expires_at),
+  CHECK (state IN ('OPEN','CLOSED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `document_admission` (
+  admission_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  identity_admission_ref VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  actor_id BIGINT UNSIGNED NOT NULL,
+  session_ref BINARY(32) NOT NULL,
+  document_id BIGINT UNSIGNED NOT NULL,
+  unit_id BIGINT UNSIGNED NULL,
+  purpose VARCHAR(40) NOT NULL,
+  capabilities JSON NOT NULL,
+  target_json JSON NOT NULL,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  expires_at DATETIME(6) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(admission_id),
+  INDEX document_admission_operation(operation_id),
+  INDEX document_admission_actor(actor_id,state),
+  CHECK (state IN ('OPEN','CLOSED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `admission_source` (
+  admission_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(admission_id,scope_key),
+  INDEX source_reverse(scope_key,epoch,admission_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `collaboration_ticket` (
+  token_hash BINARY(32) NOT NULL,
+  admission_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  client_session_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  workspace_kind VARCHAR(16) NOT NULL,
+  workspace_id BIGINT UNSIGNED NOT NULL,
+  workspace_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  state VARCHAR(16) NOT NULL,
+  expires_at DATETIME(6) NOT NULL,
+  redeemed_grant_ref VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(token_hash),
+  INDEX ticket_expiry(state,expires_at),
+  CHECK (workspace_kind IN ('MAIN','BRANCH')),
+  CHECK (state IN ('OPEN','REDEEMED','CLOSED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `delivery_session` (
+  delivery_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  admission_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  document_id BIGINT UNSIGNED NOT NULL,
+  publication_epoch BIGINT UNSIGNED NULL,
+  release_id BIGINT UNSIGNED NULL,
+  target_kind VARCHAR(24) NOT NULL,
+  target_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  instance_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  handler_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  stop_reason VARCHAR(64) NULL,
+  expires_at DATETIME(6) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(delivery_id),
+  INDEX delivery_close(document_id,state,publication_epoch),
+  INDEX delivery_instance(instance_id,state),
+  CHECK (state IN ('OPEN','STOPPING','SETTLED','UNKNOWN')),
+  CHECK ((admission_id IS NOT NULL AND publication_epoch IS NULL) OR (admission_id IS NULL AND publication_epoch IS NOT NULL))
+) ENGINE=InnoDB;
+
+CREATE TABLE `output_instance` (
+  instance_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  boot_digest BINARY(32) NOT NULL,
+  pid BIGINT UNSIGNED NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  last_heartbeat_at DATETIME(6) NOT NULL,
+  exit_proof_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(instance_id),
+  CHECK (state IN ('RUNNING','STOPPING','EXIT_CONFIRMED','UNKNOWN'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `access_gate` (
+  scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  max_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  state VARCHAR(16) NOT NULL,
+  last_revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(scope_key),
+  CHECK (state IN ('OPEN','BLOCKED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `authorization_change` (
+  revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  actor_id BIGINT UNSIGNED NULL,
+  scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  target_permission JSON NOT NULL,
+  state VARCHAR(20) NOT NULL,
+  participant_plan JSON NOT NULL,
+  retry_at DATETIME(6) NULL,
+  last_error VARCHAR(64) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(revocation_id),
+  UNIQUE KEY auth_scope_epoch(scope_key,epoch),
+  INDEX auth_due(state,retry_at),
+  CHECK (state IN ('PREPARING','FROZEN','FENCING','SUCCEEDED','REJECTED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `authorization_ack` (
+  revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  participant VARCHAR(40) NOT NULL,
+  scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  phase VARCHAR(24) NOT NULL,
+  result_digest BINARY(32) NOT NULL,
+  completed_at DATETIME(6) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(revocation_id,participant,scope_key)
+) ENGINE=InnoDB;
+
+CREATE TABLE `durable_task` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  kind VARCHAR(40) NOT NULL,
+  business_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  payload JSON NOT NULL,
+  state VARCHAR(20) NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  instance_id VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  lease_until DATETIME(6) NULL,
+  retry_at DATETIME(6) NOT NULL,
+  attempts INT UNSIGNED NOT NULL DEFAULT 0,
+  last_error VARCHAR(64) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY task_business(kind,business_key),
+  INDEX task_due(state,retry_at,id),
+  CHECK (state IN ('QUEUED','RUNNING','RETRY','SUCCEEDED','REJECTED','UNKNOWN'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `outbox` (
+  event_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  aggregate_kind VARCHAR(24) NOT NULL,
+  aggregate_id BIGINT UNSIGNED NOT NULL,
+  aggregate_seq BIGINT UNSIGNED NOT NULL,
+  event_type VARCHAR(48) NOT NULL,
+  schema_version VARCHAR(24) NOT NULL,
+  payload JSON NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(event_id),
+  UNIQUE KEY event_order(aggregate_kind,aggregate_id,aggregate_seq),
+  INDEX event_created(created_at,event_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `notification` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  recipient_id BIGINT UNSIGNED NOT NULL,
+  event_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  kind VARCHAR(40) NOT NULL,
+  target_json JSON NOT NULL,
+  read_at DATETIME(6) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY notification_dedupe(recipient_id,event_id,kind),
+  INDEX notification_page(recipient_id,id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `audit_event` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  actor_id BIGINT UNSIGNED NULL,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  item_no INT UNSIGNED NOT NULL,
+  kind VARCHAR(40) NOT NULL,
+  target_json JSON NOT NULL,
+  before_json JSON NULL,
+  after_json JSON NULL,
+  reason VARCHAR(2000) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY audit_operation(operation_id,item_no),
+  INDEX audit_actor(actor_id,id)
+) ENGINE=InnoDB;
+
+CREATE DATABASE collaboration_db CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+
+USE collaboration_db;
+
+CREATE TABLE schema_migration(version INT UNSIGNED PRIMARY KEY,checksum BINARY(32) NOT NULL,applied_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)) ENGINE=InnoDB;
+
+CREATE TABLE `room` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  document_id BIGINT UNSIGNED NOT NULL,
+  unit_id BIGINT UNSIGNED NOT NULL,
+  workspace_kind VARCHAR(16) NOT NULL,
+  workspace_id BIGINT UNSIGNED NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  last_durable_seq BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  checkpoint_id BIGINT UNSIGNED NULL,
+  barrier_generation BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  state VARCHAR(16) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY room_epoch(id,epoch),
+  UNIQUE KEY room_workspace(workspace_kind,workspace_id,unit_id,epoch),
+  INDEX room_document(document_id,state,id),
+  CHECK (workspace_kind IN ('MAIN','BRANCH')),
+  CHECK (state IN ('OPEN','BLOCKED','RETIRED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `update_log` (
+  room_id BIGINT UNSIGNED NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL,
+  seq BIGINT UNSIGNED NOT NULL,
+  client_session_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  client_update_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  payload LONGBLOB NOT NULL,
+  payload_hash BINARY(32) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(room_id,epoch,seq),
+  UNIQUE KEY update_client(room_id,epoch,client_session_id,client_update_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `checkpoint` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  room_id BIGINT UNSIGNED NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL,
+  covered_seq BIGINT UNSIGNED NOT NULL,
+  yjs_state LONGBLOB NOT NULL,
+  checksum BINARY(32) NOT NULL,
+  format_version VARCHAR(24) NOT NULL,
+  validated_at DATETIME(6) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY checkpoint_room(id,room_id,epoch),
+  INDEX checkpoint_cut(room_id,epoch,covered_seq)
+) ENGINE=InnoDB;
+
+CREATE TABLE `collaboration_grant` (
+  grant_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  document_admission_ref VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  actor_id BIGINT UNSIGNED NOT NULL,
+  session_ref BINARY(32) NOT NULL,
+  client_session_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  room_id BIGINT UNSIGNED NOT NULL,
+  workspace_epoch BIGINT UNSIGNED NOT NULL,
+  capabilities JSON NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  expires_at DATETIME(6) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(grant_id),
+  INDEX grant_actor(actor_id,state,grant_id),
+  INDEX grant_expiry(state,expires_at),
+  CHECK (state IN ('OPEN','CLOSED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `grant_source` (
+  grant_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(grant_id,scope_key),
+  INDEX grant_source_reverse(scope_key,epoch,grant_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE `flush_receipt` (
+  receipt_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  grant_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  actor_id BIGINT UNSIGNED NOT NULL,
+  room_id BIGINT UNSIGNED NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL,
+  covered_cut JSON NOT NULL,
+  dependency_digest BINARY(32) NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(receipt_id),
+  CHECK (state IN ('FIXED','CLOSED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `capture_operation` (
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  request_fingerprint BINARY(32) NOT NULL,
+  actor_id BIGINT UNSIGNED NOT NULL,
+  room_id BIGINT UNSIGNED NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL,
+  cut_ref JSON NOT NULL,
+  lineage_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  state VARCHAR(20) NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  candidate_json JSON NULL,
+  canonical_body LONGBLOB NULL,
+  body_hash BINARY(32) NULL,
+  resource_refs JSON NOT NULL,
+  go_result_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(operation_id),
+  INDEX capture_cleanup(state,operation_id),
+  CHECK (state IN ('CUT_FIXED','CAPTURED','BOUND','ABORTED','CLEANABLE','DELETED','UNKNOWN'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `main_barrier` (
+  document_id BIGINT UNSIGNED NOT NULL,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  state VARCHAR(16) NOT NULL,
+  cut_vector JSON NOT NULL,
+  structure_ref BIGINT UNSIGNED NOT NULL,
+  style_ref BIGINT UNSIGNED NOT NULL,
+  installed_manifest_id BIGINT UNSIGNED NULL,
+  go_result_digest BINARY(32) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(document_id),
+  CHECK (state IN ('PREPARING','PREPARED','INSTALLING','INSTALLED','ABORTED','UNKNOWN'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `install_receipt` (
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  manifest_id BIGINT UNSIGNED NOT NULL,
+  manifest_digest BINARY(32) NOT NULL,
+  installed_epochs JSON NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(operation_id),
+  CHECK (state IN ('INSTALLED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `delivery_session` (
+  delivery_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  grant_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  instance_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  handler_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  stop_reason VARCHAR(64) NULL,
+  expires_at DATETIME(6) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(delivery_id),
+  INDEX collab_delivery_grant(grant_id,state),
+  CHECK (state IN ('OPEN','STOPPING','SETTLED','UNKNOWN'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `access_gate` (
+  scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  max_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  state VARCHAR(16) NOT NULL,
+  last_revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(scope_key),
+  CHECK (state IN ('OPEN','BLOCKED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `authorization_change` (
+  revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  actor_id BIGINT UNSIGNED NULL,
+  scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  target_permission JSON NOT NULL,
+  state VARCHAR(20) NOT NULL,
+  participant_plan JSON NOT NULL,
+  retry_at DATETIME(6) NULL,
+  last_error VARCHAR(64) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(revocation_id),
+  UNIQUE KEY auth_scope_epoch(scope_key,epoch),
+  INDEX auth_due(state,retry_at),
+  CHECK (state IN ('PREPARING','FROZEN','FENCING','SUCCEEDED','REJECTED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `authorization_ack` (
+  revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  participant VARCHAR(40) NOT NULL,
+  scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  phase VARCHAR(24) NOT NULL,
+  result_digest BINARY(32) NOT NULL,
+  completed_at DATETIME(6) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(revocation_id,participant,scope_key)
+) ENGINE=InnoDB;
+
+CREATE TABLE `durable_task` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  kind VARCHAR(40) NOT NULL,
+  business_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  payload JSON NOT NULL,
+  state VARCHAR(20) NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  instance_id VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  lease_until DATETIME(6) NULL,
+  retry_at DATETIME(6) NOT NULL,
+  attempts INT UNSIGNED NOT NULL DEFAULT 0,
+  last_error VARCHAR(64) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY task_business(kind,business_key),
+  INDEX task_due(state,retry_at,id),
+  CHECK (state IN ('QUEUED','RUNNING','RETRY','SUCCEEDED','REJECTED','UNKNOWN'))
+) ENGINE=InnoDB;
+
+CREATE DATABASE search_db CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+
+USE search_db;
+
+CREATE TABLE schema_migration(version INT UNSIGNED PRIMARY KEY,checksum BINARY(32) NOT NULL,applied_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)) ENGINE=InnoDB;
+
+CREATE TABLE `consumed_event` (
+  consumer_name VARCHAR(40) NOT NULL,
+  event_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  document_id BIGINT UNSIGNED NOT NULL,
+  aggregate_seq BIGINT UNSIGNED NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  retry_at DATETIME(6) NULL,
+  last_error VARCHAR(64) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(consumer_name,event_id),
+  INDEX consumed_due(state,retry_at),
+  INDEX consumed_order(document_id,aggregate_seq),
+  CHECK (state IN ('RECEIVED','APPLYING','SUCCEEDED','RETRY','REJECTED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `document_index_revision` (
+  document_id BIGINT UNSIGNED NOT NULL,
+  target_seq BIGINT UNSIGNED NOT NULL,
+  applied_seq BIGINT UNSIGNED NOT NULL,
+  release_id BIGINT UNSIGNED NULL,
+  visibility VARCHAR(16) NOT NULL,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  physical_index VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(document_id),
+  INDEX index_progress(visibility,target_seq,document_id),
+  CHECK (visibility IN ('PUBLIC','HIDDEN')),
+  CHECK (applied_seq<=target_seq)
+) ENGINE=InnoDB;
+
+CREATE TABLE `rebuild_job` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  state VARCHAR(20) NOT NULL,
+  snapshot_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  watermark JSON NOT NULL,
+  cursor_json JSON NULL,
+  target_index VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  source_index VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  last_error VARCHAR(64) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  INDEX rebuild_state(state,id),
+  CHECK (state IN ('SNAPSHOT','REPLAYING','VALIDATING','SWITCHING','SUCCEEDED','REJECTED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE `index_generation` (
+  alias_name VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  physical_index VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(alias_name),
+  UNIQUE KEY physical_alias(physical_index)
+) ENGINE=InnoDB;
+
+CREATE TABLE `cursor_registry` (
+  cursor_hash BINARY(32) NOT NULL,
+  pit_handle MEDIUMTEXT NOT NULL,
+  physical_index VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  index_generation BIGINT UNSIGNED NOT NULL,
+  scope_hash BINARY(32) NOT NULL,
+  query_hash BINARY(32) NOT NULL,
+  session_ref BINARY(32) NULL,
+  last_sort JSON NULL,
+  page_size SMALLINT UNSIGNED NOT NULL,
+  expires_at DATETIME(6) NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(cursor_hash),
+  INDEX cursor_expiry(state,expires_at),
+  CHECK (state IN ('OPEN','CLOSING','CLOSED')),
+  CHECK (page_size>=1 AND page_size<=100)
+) ENGINE=InnoDB;
+
+CREATE TABLE `durable_task` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  kind VARCHAR(40) NOT NULL,
+  business_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  payload JSON NOT NULL,
+  state VARCHAR(20) NOT NULL,
+  generation BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  instance_id VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  lease_until DATETIME(6) NULL,
+  retry_at DATETIME(6) NOT NULL,
+  attempts INT UNSIGNED NOT NULL DEFAULT 0,
+  last_error VARCHAR(64) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY task_business(kind,business_key),
+  INDEX task_due(state,retry_at,id),
+  CHECK (state IN ('QUEUED','RUNNING','RETRY','SUCCEEDED','REJECTED','UNKNOWN'))
+) ENGINE=InnoDB;
+
+ALTER TABLE account_db.`session` ADD CONSTRAINT fk_1_session FOREIGN KEY (user_id) REFERENCES account_db.`user` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE account_db.`organization` ADD CONSTRAINT fk_2_organization FOREIGN KEY (owner_id) REFERENCES account_db.`user` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE account_db.`organization_member` ADD CONSTRAINT fk_3_organization_member FOREIGN KEY (organization_id) REFERENCES account_db.`organization` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE account_db.`organization_member` ADD CONSTRAINT fk_4_organization_member FOREIGN KEY (user_id) REFERENCES account_db.`user` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE account_db.`organization_invitation` ADD CONSTRAINT fk_5_organization_invitat FOREIGN KEY (organization_id) REFERENCES account_db.`organization` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE account_db.`organization_application` ADD CONSTRAINT fk_6_organization_applica FOREIGN KEY (organization_id) REFERENCES account_db.`organization` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE account_db.`organization_application` ADD CONSTRAINT fk_7_organization_applica FOREIGN KEY (applicant_id) REFERENCES account_db.`user` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE account_db.`organization_application` ADD CONSTRAINT fk_8_organization_applica FOREIGN KEY (source_invitation_id,organization_id) REFERENCES account_db.`organization_invitation` (id,organization_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE account_db.`organization_creation_grant` ADD CONSTRAINT fk_9_organization_creatio FOREIGN KEY (organization_id,user_id) REFERENCES account_db.`organization_member` (organization_id,user_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE account_db.`identity_admission` ADD CONSTRAINT fk_10_identity_admission FOREIGN KEY (actor_id) REFERENCES account_db.`user` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE account_db.`identity_admission` ADD CONSTRAINT fk_11_identity_admission FOREIGN KEY (session_id) REFERENCES account_db.`session` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE account_db.`admission_source` ADD CONSTRAINT fk_12_admission_source FOREIGN KEY (admission_id) REFERENCES account_db.`identity_admission` (admission_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE account_db.`account_close` ADD CONSTRAINT fk_13_account_close FOREIGN KEY (user_id) REFERENCES account_db.`user` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE account_db.`organization_transition` ADD CONSTRAINT fk_14_organization_transit FOREIGN KEY (organization_id) REFERENCES account_db.`organization` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE account_db.`authorization_ack` ADD CONSTRAINT fk_15_authorization_ack FOREIGN KEY (revocation_id) REFERENCES account_db.`authorization_change` (revocation_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`knowledge_base` ADD CONSTRAINT fk_16_knowledge_base FOREIGN KEY (space_id) REFERENCES document_db.`space` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`knowledge_base_member` ADD CONSTRAINT fk_17_knowledge_base_membe FOREIGN KEY (knowledge_base_id) REFERENCES document_db.`knowledge_base` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`knowledge_base_creation_grant` ADD CONSTRAINT fk_18_knowledge_base_creat FOREIGN KEY (knowledge_base_id) REFERENCES document_db.`knowledge_base` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`admin_retirement` ADD CONSTRAINT fk_19_admin_retirement FOREIGN KEY (knowledge_base_id,user_id) REFERENCES document_db.`knowledge_base_member` (knowledge_base_id,user_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`document` ADD CONSTRAINT fk_20_document FOREIGN KEY (space_id) REFERENCES document_db.`space` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`document` ADD CONSTRAINT fk_21_document FOREIGN KEY (knowledge_base_id,space_id) REFERENCES document_db.`knowledge_base` (id,space_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`structure_revision` ADD CONSTRAINT fk_22_structure_revision FOREIGN KEY (document_id) REFERENCES document_db.`document` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`structure_revision` ADD CONSTRAINT fk_23_structure_revision FOREIGN KEY (parent_id,document_id) REFERENCES document_db.`structure_revision` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`style_revision` ADD CONSTRAINT fk_24_style_revision FOREIGN KEY (document_id) REFERENCES document_db.`document` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`style_revision` ADD CONSTRAINT fk_25_style_revision FOREIGN KEY (parent_id,document_id) REFERENCES document_db.`style_revision` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`chapter` ADD CONSTRAINT fk_26_chapter FOREIGN KEY (created_structure_id,document_id) REFERENCES document_db.`structure_revision` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`chapter` ADD CONSTRAINT fk_27_chapter FOREIGN KEY (retired_structure_id,document_id) REFERENCES document_db.`structure_revision` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`collaboration_unit` ADD CONSTRAINT fk_28_collaboration_unit FOREIGN KEY (chapter_id,document_id) REFERENCES document_db.`chapter` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`collaboration_unit` ADD CONSTRAINT fk_29_collaboration_unit FOREIGN KEY (created_structure_id,document_id) REFERENCES document_db.`structure_revision` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`collaboration_unit` ADD CONSTRAINT fk_30_collaboration_unit FOREIGN KEY (retired_structure_id,document_id) REFERENCES document_db.`structure_revision` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`structure_entry` ADD CONSTRAINT fk_31_structure_entry FOREIGN KEY (structure_id,document_id) REFERENCES document_db.`structure_revision` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`structure_entry` ADD CONSTRAINT fk_32_structure_entry FOREIGN KEY (chapter_id,document_id) REFERENCES document_db.`chapter` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`structure_entry` ADD CONSTRAINT fk_33_structure_entry FOREIGN KEY (unit_id,document_id) REFERENCES document_db.`collaboration_unit` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`structure_entry` ADD CONSTRAINT fk_34_structure_entry FOREIGN KEY (structure_id,parent_node_id) REFERENCES document_db.`structure_entry` (structure_id,node_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`content_grant` ADD CONSTRAINT fk_35_content_grant FOREIGN KEY (document_id) REFERENCES document_db.`document` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`content_version` ADD CONSTRAINT fk_36_content_version FOREIGN KEY (unit_id,document_id) REFERENCES document_db.`collaboration_unit` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`content_version` ADD CONSTRAINT fk_37_content_version FOREIGN KEY (structure_id,document_id) REFERENCES document_db.`structure_revision` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`main_manifest` ADD CONSTRAINT fk_38_main_manifest FOREIGN KEY (structure_id,document_id) REFERENCES document_db.`structure_revision` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`main_manifest` ADD CONSTRAINT fk_39_main_manifest FOREIGN KEY (style_id,document_id) REFERENCES document_db.`style_revision` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`main_manifest` ADD CONSTRAINT fk_40_main_manifest FOREIGN KEY (parent_id,document_id) REFERENCES document_db.`main_manifest` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`manifest_entry` ADD CONSTRAINT fk_41_manifest_entry FOREIGN KEY (manifest_id,document_id) REFERENCES document_db.`main_manifest` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`manifest_entry` ADD CONSTRAINT fk_42_manifest_entry FOREIGN KEY (content_version_id,unit_id,document_id) REFERENCES document_db.`content_version` (id,unit_id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`branch` ADD CONSTRAINT fk_43_branch FOREIGN KEY (unit_id,document_id) REFERENCES document_db.`collaboration_unit` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`branch` ADD CONSTRAINT fk_44_branch FOREIGN KEY (initial_base_version_id,unit_id,document_id) REFERENCES document_db.`content_version` (id,unit_id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`collaboration_unit` ADD CONSTRAINT fk_45_collaboration_unit FOREIGN KEY (active_branch_id,id,document_id) REFERENCES document_db.`branch` (id,unit_id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`branch_lineage` ADD CONSTRAINT fk_46_branch_lineage FOREIGN KEY (branch_id,unit_id,document_id) REFERENCES document_db.`branch` (id,unit_id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`branch_lineage` ADD CONSTRAINT fk_47_branch_lineage FOREIGN KEY (base_manifest_id,document_id) REFERENCES document_db.`main_manifest` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`branch_lineage` ADD CONSTRAINT fk_48_branch_lineage FOREIGN KEY (base_version_id,unit_id,document_id) REFERENCES document_db.`content_version` (id,unit_id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`branch_lineage` ADD CONSTRAINT fk_49_branch_lineage FOREIGN KEY (previous_id,branch_id) REFERENCES document_db.`branch_lineage` (id,branch_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`branch` ADD CONSTRAINT fk_50_branch FOREIGN KEY (current_lineage_id,id) REFERENCES document_db.`branch_lineage` (id,branch_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`unit_lineage` ADD CONSTRAINT fk_51_unit_lineage FOREIGN KEY (source_version_id,source_unit_id,source_document_id) REFERENCES document_db.`content_version` (id,unit_id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`unit_lineage` ADD CONSTRAINT fk_52_unit_lineage FOREIGN KEY (target_version_id,target_unit_id,target_document_id) REFERENCES document_db.`content_version` (id,unit_id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`review_request` ADD CONSTRAINT fk_53_review_request FOREIGN KEY (branch_id,unit_id,document_id) REFERENCES document_db.`branch` (id,unit_id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`review_round` ADD CONSTRAINT fk_54_review_round FOREIGN KEY (request_id,unit_id) REFERENCES document_db.`review_request` (id,unit_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`review_round` ADD CONSTRAINT fk_55_review_round FOREIGN KEY (request_id,document_id) REFERENCES document_db.`review_request` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`review_round` ADD CONSTRAINT fk_56_review_round FOREIGN KEY (content_version_id,unit_id,document_id) REFERENCES document_db.`content_version` (id,unit_id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`review_round` ADD CONSTRAINT fk_57_review_round FOREIGN KEY (base_version_id,unit_id,document_id) REFERENCES document_db.`content_version` (id,unit_id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`review_round` ADD CONSTRAINT fk_58_review_round FOREIGN KEY (base_manifest_id,document_id) REFERENCES document_db.`main_manifest` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`review_round` ADD CONSTRAINT fk_59_review_round FOREIGN KEY (structure_id,document_id) REFERENCES document_db.`structure_revision` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`review_request` ADD CONSTRAINT fk_60_review_request FOREIGN KEY (current_round_id,id) REFERENCES document_db.`review_round` (id,request_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`request_submitter` ADD CONSTRAINT fk_61_request_submitter FOREIGN KEY (first_round_id,request_id) REFERENCES document_db.`review_round` (id,request_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`review_action` ADD CONSTRAINT fk_62_review_action FOREIGN KEY (round_id,request_id) REFERENCES document_db.`review_round` (id,request_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`change_request` ADD CONSTRAINT fk_63_change_request FOREIGN KEY (origin_round_id,request_id) REFERENCES document_db.`review_round` (id,request_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`change_request` ADD CONSTRAINT fk_64_change_request FOREIGN KEY (created_action_id,request_id) REFERENCES document_db.`review_action` (id,request_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`change_request` ADD CONSTRAINT fk_65_change_request FOREIGN KEY (resolved_action_id,request_id) REFERENCES document_db.`review_action` (id,request_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`review_action` ADD CONSTRAINT fk_66_review_action FOREIGN KEY (target_change_id,request_id) REFERENCES document_db.`change_request` (id,request_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`unit_review_guard` ADD CONSTRAINT fk_67_unit_review_guard FOREIGN KEY (unit_id) REFERENCES document_db.`collaboration_unit` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`unit_review_guard` ADD CONSTRAINT fk_68_unit_review_guard FOREIGN KEY (ongoing_request_id,unit_id) REFERENCES document_db.`review_request` (id,unit_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`unit_review_guard` ADD CONSTRAINT fk_69_unit_review_guard FOREIGN KEY (resumable_request_id,unit_id) REFERENCES document_db.`review_request` (id,unit_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`submission_operation` ADD CONSTRAINT fk_70_submission_operation FOREIGN KEY (operation_id) REFERENCES document_db.`operation_receipt` (operation_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`submission_operation` ADD CONSTRAINT fk_71_submission_operation FOREIGN KEY (branch_id,unit_id,document_id) REFERENCES document_db.`branch` (id,unit_id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`submission_operation` ADD CONSTRAINT fk_72_submission_operation FOREIGN KEY (expected_round_id,request_id) REFERENCES document_db.`review_round` (id,request_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`submission_operation` ADD CONSTRAINT fk_73_submission_operation FOREIGN KEY (result_round_id,request_id) REFERENCES document_db.`review_round` (id,request_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`unit_review_guard` ADD CONSTRAINT fk_74_unit_review_guard FOREIGN KEY (submission_operation_id,unit_id) REFERENCES document_db.`submission_operation` (operation_id,unit_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`review_round` ADD CONSTRAINT fk_75_review_round FOREIGN KEY (submission_operation_id) REFERENCES document_db.`submission_operation` (operation_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_operation` ADD CONSTRAINT fk_76_merge_operation FOREIGN KEY (operation_id) REFERENCES document_db.`operation_receipt` (operation_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_operation` ADD CONSTRAINT fk_77_merge_operation FOREIGN KEY (round_id,request_id) REFERENCES document_db.`review_round` (id,request_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`review_request` ADD CONSTRAINT fk_78_review_request FOREIGN KEY (active_merge_operation_id,id) REFERENCES document_db.`merge_operation` (operation_id,request_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_attempt` ADD CONSTRAINT fk_79_merge_attempt FOREIGN KEY (operation_id) REFERENCES document_db.`merge_operation` (operation_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_record` ADD CONSTRAINT fk_80_merge_record FOREIGN KEY (round_id,request_id) REFERENCES document_db.`review_round` (id,request_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_record` ADD CONSTRAINT fk_81_merge_record FOREIGN KEY (attempt_id,operation_id) REFERENCES document_db.`merge_attempt` (id,operation_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_record` ADD CONSTRAINT fk_82_merge_record FOREIGN KEY (approval_action_id,request_id) REFERENCES document_db.`review_action` (id,request_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`review_action` ADD CONSTRAINT fk_83_review_action FOREIGN KEY (merge_record_id,request_id) REFERENCES document_db.`merge_record` (id,request_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_operation` ADD CONSTRAINT fk_84_merge_operation FOREIGN KEY (result_merge_id,request_id) REFERENCES document_db.`merge_record` (id,request_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`main_commit_barrier` ADD CONSTRAINT fk_85_main_commit_barrier FOREIGN KEY (document_id) REFERENCES document_db.`document` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`main_commit_barrier` ADD CONSTRAINT fk_86_main_commit_barrier FOREIGN KEY (target_manifest_id,document_id) REFERENCES document_db.`main_manifest` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`release` ADD CONSTRAINT fk_87_release FOREIGN KEY (manifest_id,document_id) REFERENCES document_db.`main_manifest` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`document` ADD CONSTRAINT fk_88_document FOREIGN KEY (current_structure_id,id) REFERENCES document_db.`structure_revision` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`document` ADD CONSTRAINT fk_89_document FOREIGN KEY (current_style_id,id) REFERENCES document_db.`style_revision` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`document` ADD CONSTRAINT fk_90_document FOREIGN KEY (current_manifest_id,id) REFERENCES document_db.`main_manifest` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`document` ADD CONSTRAINT fk_91_document FOREIGN KEY (current_release_id,id) REFERENCES document_db.`release` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`resource` ADD CONSTRAINT fk_92_resource FOREIGN KEY (space_id) REFERENCES document_db.`space` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`resource_reference` ADD CONSTRAINT fk_93_resource_reference FOREIGN KEY (resource_id) REFERENCES document_db.`resource` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`resource_reference` ADD CONSTRAINT fk_94_resource_reference FOREIGN KEY (document_id) REFERENCES document_db.`document` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`resource_protection` ADD CONSTRAINT fk_95_resource_protection FOREIGN KEY (document_id) REFERENCES document_db.`document` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`document_invitation` ADD CONSTRAINT fk_96_document_invitation FOREIGN KEY (document_id) REFERENCES document_db.`document` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`document_application` ADD CONSTRAINT fk_97_document_application FOREIGN KEY (invitation_id,document_id) REFERENCES document_db.`document_invitation` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`quota_account` ADD CONSTRAINT fk_98_quota_account FOREIGN KEY (space_id) REFERENCES document_db.`space` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`quota_reservation` ADD CONSTRAINT fk_99_quota_reservation FOREIGN KEY (space_id) REFERENCES document_db.`quota_account` (space_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`comment_thread` ADD CONSTRAINT fk_100_comment_thread FOREIGN KEY (document_id) REFERENCES document_db.`document` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`comment_thread` ADD CONSTRAINT fk_101_comment_thread FOREIGN KEY (content_version_id,document_id) REFERENCES document_db.`content_version` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`comment` ADD CONSTRAINT fk_102_comment FOREIGN KEY (thread_id) REFERENCES document_db.`comment_thread` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`comment` ADD CONSTRAINT fk_103_comment FOREIGN KEY (reply_to_id,thread_id) REFERENCES document_db.`comment` (id,thread_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`export_job` ADD CONSTRAINT fk_104_export_job FOREIGN KEY (manifest_id,document_id) REFERENCES document_db.`main_manifest` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`export_job` ADD CONSTRAINT fk_105_export_job FOREIGN KEY (release_id,document_id) REFERENCES document_db.`release` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`export_job` ADD CONSTRAINT fk_106_export_job FOREIGN KEY (artifact_resource_id) REFERENCES document_db.`resource` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`read_view` ADD CONSTRAINT fk_107_read_view FOREIGN KEY (manifest_id,document_id) REFERENCES document_db.`main_manifest` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`document_admission` ADD CONSTRAINT fk_108_document_admission FOREIGN KEY (document_id) REFERENCES document_db.`document` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`document_admission` ADD CONSTRAINT fk_109_document_admission FOREIGN KEY (unit_id,document_id) REFERENCES document_db.`collaboration_unit` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`read_view` ADD CONSTRAINT fk_110_read_view FOREIGN KEY (admission_id) REFERENCES document_db.`document_admission` (admission_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`admission_source` ADD CONSTRAINT fk_111_admission_source FOREIGN KEY (admission_id) REFERENCES document_db.`document_admission` (admission_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`collaboration_ticket` ADD CONSTRAINT fk_112_collaboration_ticket FOREIGN KEY (admission_id) REFERENCES document_db.`document_admission` (admission_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`delivery_session` ADD CONSTRAINT fk_113_delivery_session FOREIGN KEY (admission_id) REFERENCES document_db.`document_admission` (admission_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`delivery_session` ADD CONSTRAINT fk_114_delivery_session FOREIGN KEY (release_id,document_id) REFERENCES document_db.`release` (id,document_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`delivery_session` ADD CONSTRAINT fk_115_delivery_session FOREIGN KEY (instance_id) REFERENCES document_db.`output_instance` (instance_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`authorization_ack` ADD CONSTRAINT fk_116_authorization_ack FOREIGN KEY (revocation_id) REFERENCES document_db.`authorization_change` (revocation_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE collaboration_db.`update_log` ADD CONSTRAINT fk_117_update_log FOREIGN KEY (room_id,epoch) REFERENCES collaboration_db.`room` (id,epoch) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE collaboration_db.`checkpoint` ADD CONSTRAINT fk_118_checkpoint FOREIGN KEY (room_id,epoch) REFERENCES collaboration_db.`room` (id,epoch) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE collaboration_db.`room` ADD CONSTRAINT fk_119_room FOREIGN KEY (checkpoint_id,id,epoch) REFERENCES collaboration_db.`checkpoint` (id,room_id,epoch) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE collaboration_db.`collaboration_grant` ADD CONSTRAINT fk_120_collaboration_grant FOREIGN KEY (room_id,workspace_epoch) REFERENCES collaboration_db.`room` (id,epoch) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE collaboration_db.`grant_source` ADD CONSTRAINT fk_121_grant_source FOREIGN KEY (grant_id) REFERENCES collaboration_db.`collaboration_grant` (grant_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE collaboration_db.`flush_receipt` ADD CONSTRAINT fk_122_flush_receipt FOREIGN KEY (grant_id) REFERENCES collaboration_db.`collaboration_grant` (grant_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE collaboration_db.`flush_receipt` ADD CONSTRAINT fk_123_flush_receipt FOREIGN KEY (room_id,epoch) REFERENCES collaboration_db.`room` (id,epoch) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE collaboration_db.`capture_operation` ADD CONSTRAINT fk_124_capture_operation FOREIGN KEY (room_id,epoch) REFERENCES collaboration_db.`room` (id,epoch) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE collaboration_db.`delivery_session` ADD CONSTRAINT fk_125_delivery_session FOREIGN KEY (grant_id) REFERENCES collaboration_db.`collaboration_grant` (grant_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE collaboration_db.`authorization_ack` ADD CONSTRAINT fk_126_authorization_ack FOREIGN KEY (revocation_id) REFERENCES collaboration_db.`authorization_change` (revocation_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`review_round` ADD CONSTRAINT fk_127_review_round FOREIGN KEY (lineage_id) REFERENCES document_db.`branch_lineage` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`review_action` ADD CONSTRAINT fk_128_review_action FOREIGN KEY (content_version_id) REFERENCES document_db.`content_version` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`submission_operation` ADD CONSTRAINT fk_129_submission_operation FOREIGN KEY (lineage_id) REFERENCES document_db.`branch_lineage` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_operation` ADD CONSTRAINT fk_130_merge_operation FOREIGN KEY (content_version_id) REFERENCES document_db.`content_version` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_attempt` ADD CONSTRAINT fk_131_merge_attempt FOREIGN KEY (base_version_id) REFERENCES document_db.`content_version` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_attempt` ADD CONSTRAINT fk_132_merge_attempt FOREIGN KEY (submitted_version_id) REFERENCES document_db.`content_version` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_attempt` ADD CONSTRAINT fk_133_merge_attempt FOREIGN KEY (main_manifest_id) REFERENCES document_db.`main_manifest` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_attempt` ADD CONSTRAINT fk_134_merge_attempt FOREIGN KEY (structure_id) REFERENCES document_db.`structure_revision` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_attempt` ADD CONSTRAINT fk_135_merge_attempt FOREIGN KEY (style_id) REFERENCES document_db.`style_revision` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_attempt` ADD CONSTRAINT fk_136_merge_attempt FOREIGN KEY (lineage_id) REFERENCES document_db.`branch_lineage` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_attempt` ADD CONSTRAINT fk_137_merge_attempt FOREIGN KEY (candidate_version_id) REFERENCES document_db.`content_version` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_record` ADD CONSTRAINT fk_138_merge_record FOREIGN KEY (input_manifest_id) REFERENCES document_db.`main_manifest` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_record` ADD CONSTRAINT fk_139_merge_record FOREIGN KEY (output_manifest_id) REFERENCES document_db.`main_manifest` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_record` ADD CONSTRAINT fk_140_merge_record FOREIGN KEY (result_version_id) REFERENCES document_db.`content_version` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`merge_record` ADD CONSTRAINT fk_141_merge_record FOREIGN KEY (lineage_id) REFERENCES document_db.`branch_lineage` (id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE account_db.`admission_source` ADD CONSTRAINT fk_142_admission_source FOREIGN KEY (scope_key) REFERENCES account_db.`access_gate` (scope_key) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE document_db.`admission_source` ADD CONSTRAINT fk_143_admission_source FOREIGN KEY (scope_key) REFERENCES document_db.`access_gate` (scope_key) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE collaboration_db.`grant_source` ADD CONSTRAINT fk_144_grant_source FOREIGN KEY (scope_key) REFERENCES collaboration_db.`access_gate` (scope_key) ON DELETE RESTRICT ON UPDATE RESTRICT;

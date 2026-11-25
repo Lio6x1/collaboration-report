@@ -1,0 +1,112 @@
+syntax = "proto3";
+package collaboration.v1;
+option go_package = "collaboration/contracts/internalv1;internalv1";
+
+// All methods require mTLS service identity and per-method caller allowlist.
+// IDs are uint64 on the wire; browser JSON decimal strings are parsed without floats.
+// Every call has a deadline. DEADLINE_EXCEEDED is an unknown outcome, not a business rejection.
+message SourceEpoch { string scope_key=1; uint64 epoch=2; }
+message Target { uint64 document_id=1; uint64 unit_id=2; uint64 branch_id=3; uint64 structure_id=4; uint64 workspace_epoch=5; string purpose=6; }
+message IdentityTarget { enum Kind { KIND_UNSPECIFIED=0; USER=1; ORGANIZATION=2; SPACE=3; } Kind kind=1; uint64 user_id=2; uint64 organization_id=3; uint64 space_id=4; }
+enum IdentityCapability { IDENTITY_CAPABILITY_UNSPECIFIED=0; ACTIVE_ACCOUNT=1; ORGANIZATION_MEMBER=2; ORGANIZATION_ADMIN=3; ORGANIZATION_OWNER=4; ORGANIZATION_CREATE_KNOWLEDGE_BASE=5; PERSONAL_SPACE_OWNER=6; }
+message OperationContext { string operation_id=1; uint64 actor_id=2; string identity_admission_ref=3; string document_admission_ref=4; Target target=5; repeated SourceEpoch sources=6; bytes request_fingerprint=7; }
+message IdentityRequest { string operation_id=1; bytes session_token=2; string purpose=3; Target target=4; IdentityCapability required_identity_capability=5; IdentityTarget identity_target=6; }
+message IdentityAdmission { string admission_id=1; uint64 actor_id=2; bytes session_ref=3; repeated SourceEpoch sources=4; int64 expires_unix_ms=5; string purpose=6; Target target=7; IdentityTarget identity_target=8; IdentityCapability capability=9; string operation_id=10; }
+message IdentityRevalidation { string admission_id=1; string operation_id=2; string purpose=3; Target target=4; IdentityTarget identity_target=5; }
+message AccountOperationQuery { string operation_id=1; bytes session_token=2; bytes recovery_receipt=3; }
+message FenceRequest { string revocation_id=1; repeated SourceEpoch closed_scopes=2; uint64 generation=3; bytes target_digest=4; }
+message FenceResult { enum State { STATE_UNSPECIFIED=0; PROCESSING=1; ACKNOWLEDGED=2; UNKNOWN_INSTANCE=3; } State state=1; string revocation_id=2; repeated SourceEpoch closed_scopes=3; uint64 generation=4; bytes result_digest=5; repeated string missing_instances=6; }
+message OperationQuery { string operation_id=1; Target target=2; bytes request_fingerprint=3; }
+message OperationResult { enum State { STATE_UNSPECIFIED=0; PROCESSING=1; SUCCEEDED=2; REJECTED=3; CANCELLED=4; UNKNOWN=5; } State state=1; string operation_id=2; uint64 generation=3; uint64 terminal_revision=4; repeated uint64 result_ids=5; string business_code=6; bytes result_digest=7; bytes fixed_result_json_utf8=8; bytes current_state_json_utf8=9; }
+service IdentityInternal {
+ rpc AcquireIdentityAdmission(IdentityRequest) returns (IdentityAdmission);
+ rpc RevalidateIdentityAdmission(IdentityRevalidation) returns (IdentityAdmission);
+ rpc FenceAccess(FenceRequest) returns (FenceResult);
+ rpc GetAuthorizationChange(OperationQuery) returns (OperationResult);
+ rpc GetAccountOperation(AccountOperationQuery) returns (OperationResult);
+}
+
+message RedeemTicketRequest { bytes ticket=1; string client_session_id=2; string connection_id=3; }
+message CollaborationGrant { string grant_id=1; OperationContext context=2; uint64 room_id=3; repeated string capabilities=4; int64 expires_unix_ms=5; string client_session_id=6; }
+message PublicSnapshotRequest { uint64 document_id=1; uint64 expected_release_id=2; uint64 aggregate_seq=3; }
+message ManifestUnit { uint64 unit_id=1; uint64 content_version_id=2; FixedContent content=3; }
+message PublicSnapshot { uint64 document_id=1; uint64 release_id=2; uint64 aggregate_seq=3; uint64 publication_epoch=4; bool visible=5; string title=6; uint64 structure_id=7; repeated ManifestUnit units=8; string visibility_policy=9; uint64 visibility_revision=10; uint64 knowledge_base_visibility_revision=11; }
+message CleanupAuthorization { string operation_id=1; uint64 generation=2; string candidate_ref=3; bytes candidate_digest=4; }
+message CleanupPermit { enum State { STATE_UNSPECIFIED=0; RETAIN=1; CLEANABLE=2; UNKNOWN=3; } State state=1; string operation_id=2; uint64 generation=3; bytes permit_digest=4; }
+message LifecycleRequest { string operation_id=1; uint64 user_id=2; repeated uint64 closing_organization_ids=3; uint64 generation=4; bytes fixed_plan_digest=5; }
+message LifecyclePlan { string operation_id=1; uint64 generation=2; bytes plan_json_utf8=3; bytes plan_digest=4; string phase=5; }
+// Protect READY same-space resources before Node's durable UPDATE. UNKNOWN pins references.
+// Generation/operation/update_hash are immutable; release tombstones reject late protect/confirm.
+message DraftResourceRequest { OperationContext context=1; string grant_id=2; uint64 room_id=3; uint64 workspace_epoch=4; uint64 generation=5; repeated uint64 resource_ids=6; bytes update_hash=7; string client_session_id=8; string client_update_id=9; }
+message DraftResourceReceipt { enum State { STATE_UNSPECIFIED=0; PROTECTED=1; CONFIRMED=2; RELEASED=3; UNKNOWN=4; } State state=1; string operation_id=2; uint64 generation=3; bytes resource_digest=4; bytes receipt_digest=5; }
+message DraftResourceQuery { OperationContext context=1; uint64 generation=2; bytes resource_digest=3; }
+message DraftResourceFinalize { DraftResourceQuery query=1; string node_receipt_ref=2; uint64 durable_seq=3; bytes update_hash=4; string proven_node_outcome=5; }
+service DocumentInternal {
+ rpc RedeemCollaborationTicket(RedeemTicketRequest) returns (CollaborationGrant);
+ rpc GetOperationResult(OperationQuery) returns (OperationResult);
+ rpc FenceAccess(FenceRequest) returns (FenceResult);
+ rpc GetFenceResult(FenceRequest) returns (FenceResult);
+ rpc GetPublicSnapshot(PublicSnapshotRequest) returns (PublicSnapshot);
+ rpc AuthorizeCandidateCleanup(CleanupAuthorization) returns (CleanupPermit);
+ rpc ReserveAdminRetirement(LifecycleRequest) returns (LifecyclePlan);
+ rpc PrepareLifecyclePlan(LifecycleRequest) returns (LifecyclePlan);
+ rpc ApplyLifecyclePlan(LifecycleRequest) returns (LifecyclePlan);
+ rpc ProtectDraftResources(DraftResourceRequest) returns (DraftResourceReceipt);
+ rpc GetDraftResourceProtection(DraftResourceQuery) returns (DraftResourceReceipt);
+ rpc ConfirmDraftResources(DraftResourceFinalize) returns (DraftResourceReceipt);
+ rpc ReleaseDraftResources(DraftResourceFinalize) returns (DraftResourceReceipt);
+}
+
+message RoomCut { uint64 room_id=1; uint64 workspace_epoch=2; uint64 durable_seq=3; }
+message CutVector { uint64 document_id=1; uint64 structure_id=2; uint64 style_id=3; uint64 control_revision=4; repeated RoomCut rooms=5; bytes dependency_digest=6; }
+message FixedContent {
+ uint64 document_id=1; uint64 unit_id=2; uint64 branch_id=3; uint64 structure_id=4;
+ string capture_id=5; string operation_id=6; uint64 workspace_epoch=7;
+ bytes cut_json_utf8=8; string lineage_ref=9;
+ bytes body_json_utf8=10; string schema_version=11; string canonicalization_version=12;
+ string hash_algorithm=13; bytes body_hash=14; uint64 byte_size=15;
+ repeated uint64 resource_ids=16; bytes provenance_json_utf8=17; string provenance_schema=18;
+}
+message CaptureSubmissionRequest { OperationContext context=1; string flush_receipt_id=2; uint64 guard_generation=3; string lineage_ref=4; }
+message CaptureReply { enum State { STATE_UNSPECIFIED=0; PROCESSING=1; FIXED=2; REJECTED=3; } State state=1; FixedContent content=2; string business_code=3; }
+message FinalizeCaptureRequest { OperationContext context=1; string capture_id=2; OperationResult authoritative_result=3; }
+message CaptureMainRequest { OperationContext context=1; uint64 expected_manifest_id=2; uint64 expected_control_revision=3; uint64 expected_structure_id=4; uint64 expected_style_id=5; string usage=6; }
+message MainCaptureReply { CaptureReply.State state=1; CutVector cut=2; repeated FixedContent units=3; bytes result_digest=4; }
+message DraftPreviewRequest { OperationContext context=1; uint64 expected_branch_id=2; uint64 expected_structure_id=3; uint64 expected_lineage_id=4; }
+message DraftPreviewReply { CaptureReply.State state=1; string preview_cut_ref=2; FixedContent draft=3; uint64 main_manifest_id=4; CutVector observed_cut=5; int64 expires_unix_ms=6; bytes input_digest=7; }
+message DraftResolutionRequest { OperationContext context=1; string expected_attempt_id=2; bytes expected_input_digest=3; uint64 expected_round_id=4; FixedContent resolution=5; }
+message MergeCandidateRequest { OperationContext context=1; string attempt_id=2; FixedContent base=3; FixedContent submitted=4; FixedContent main=5; CutVector main_cut=6; bytes input_digest=7; }
+message Conflict { string block_id=1; string node_path=2; string kind=3; string reason=4; uint64 base_version_id=5; uint64 submitted_version_id=6; uint64 main_version_id=7; }
+message MergeCandidateReply { CaptureReply.State state=1; FixedContent candidate=2; repeated Conflict conflicts=3; bytes input_digest=4; }
+message PrepareMainCommitRequest { OperationContext context=1; uint64 barrier_generation=2; CutVector expected_cut=3; }
+message MainBarrierReply { enum State { STATE_UNSPECIFIED=0; PREPARED=1; CHANGED=2; PROCESSING=3; } State state=1; string operation_id=2; uint64 barrier_generation=3; CutVector prepared_cut=4; bytes digest=5; }
+message ReconcileMainCommitRequest { OperationContext context=1; uint64 barrier_generation=2; OperationResult authoritative_result=3; uint64 manifest_id=4; repeated ManifestUnit units=5; bytes manifest_digest=6; }
+message InstallReply { enum State { STATE_UNSPECIFIED=0; READY=1; SYNCING=2; ABORTED=3; } State state=1; string operation_id=2; uint64 barrier_generation=3; uint64 manifest_id=4; repeated RoomCut installed_epochs=5; bytes manifest_digest=6; }
+message CleanupCandidateRequest { CleanupAuthorization binding=1; CleanupPermit permit=2; }
+service CollaborationInternal {
+ rpc CaptureSubmission(CaptureSubmissionRequest) returns (CaptureReply);
+ rpc GetCapture(OperationQuery) returns (CaptureReply);
+ rpc FinalizeCapture(FinalizeCaptureRequest) returns (OperationResult);
+ rpc CaptureMainView(CaptureMainRequest) returns (MainCaptureReply);
+ rpc CaptureDraftPreview(DraftPreviewRequest) returns (DraftPreviewReply);
+ rpc ApplyDraftResolution(DraftResolutionRequest) returns (OperationResult);
+ rpc ComputeMergeCandidate(MergeCandidateRequest) returns (MergeCandidateReply);
+ rpc PrepareMainCommit(PrepareMainCommitRequest) returns (MainBarrierReply);
+ rpc ReconcileMainCommit(ReconcileMainCommitRequest) returns (InstallReply);
+ rpc FenceAccess(FenceRequest) returns (FenceResult);
+ rpc GetFenceResult(FenceRequest) returns (FenceResult);
+ rpc CleanupCandidate(CleanupCandidateRequest) returns (OperationResult);
+}
+
+message SearchScope { string scope_hash=1; bytes session_ref=2; repeated uint64 space_ids=3; bool anonymous=4; }
+message SearchCandidatesRequest { string query=1; SearchScope scope=2; uint32 page_size=3; bytes cursor=4; string query_digest=5; }
+message SearchCandidate { uint64 document_id=1; uint64 release_id=2; uint64 aggregate_seq=3; string physical_index=4; bytes sort_json_utf8=5; }
+message SearchCandidatesReply { repeated SearchCandidate candidates=1; bytes continuation=2; uint64 index_generation=3; string physical_index=4; int64 expires_unix_ms=5; bool has_more=6; bool complete=7; }
+message RebuildRequest { string operation_id=1; uint64 generation=2; string snapshot_ref=3; bytes watermark_json_utf8=4; }
+message CloseCursorRequest { bytes cursor=1; SearchScope scope=2; }
+service SearchInternal {
+ rpc SearchCandidates(SearchCandidatesRequest) returns (SearchCandidatesReply);
+ rpc CloseCursor(CloseCursorRequest) returns (OperationResult);
+ rpc StartRebuild(RebuildRequest) returns (OperationResult);
+ rpc GetRebuild(OperationQuery) returns (OperationResult);
+}

@@ -1,0 +1,115 @@
+{
+  "version": 11,
+  "parentSHA256": "32f6515202eac5b7337e988c3dce665023f0c69c68afec5161902fcdda3d85ca",
+  "sha256": "33440233b685c340cb046abf388017598c6f4a9781cfe24a58589c54b8909c51",
+  "tables": [
+    {
+      "database": "document_db",
+      "name": "draft_body_capacity",
+      "columns": [
+        {
+          "name": "room_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "workspace_epoch",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "document_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "space_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "bytes",
+          "type": "bigint unsigned",
+          "nullable": false
+        }
+      ],
+      "primaryKey": ["room_id", "workspace_epoch"]
+    },
+    {
+      "database": "document_db",
+      "name": "draft_body_reservation",
+      "columns": [
+        {
+          "name": "operation_id",
+          "type": "varchar(96)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "document_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "space_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "room_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "workspace_epoch",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "body_bytes",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "body_hash",
+          "type": "binary(32)",
+          "nullable": false
+        },
+        {
+          "name": "bytes",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "state",
+          "type": "varchar(16)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        }
+      ],
+      "primaryKey": ["operation_id"]
+    },
+    {
+      "database": "document_db",
+      "name": "reading_body_capacity",
+      "columns": [
+        {
+          "name": "version_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "document_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "bytes",
+          "type": "bigint unsigned",
+          "nullable": false
+        }
+      ],
+      "primaryKey": ["version_id"]
+    }
+  ]
+}

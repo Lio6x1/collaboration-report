@@ -1,0 +1,44 @@
+{
+  "version": "canonical-v1",
+  "vectors": [
+    {
+      "name": "paragraph-formatting",
+      "input": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {
+              "id": "p-align",
+              "align": "center",
+              "firstLineIndent": true
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "居中缩进"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "id": "h-align",
+              "level": 2,
+              "align": "right"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "右对齐标题"
+              }
+            ]
+          }
+        ]
+      },
+      "canonical_utf8": "{\"content\":[{\"attrs\":{\"align\":\"center\",\"firstLineIndent\":true,\"id\":\"p-align\"},\"content\":[{\"text\":\"居中缩进\",\"type\":\"text\"}],\"type\":\"paragraph\"},{\"attrs\":{\"align\":\"right\",\"id\":\"h-align\",\"level\":2},\"content\":[{\"text\":\"右对齐标题\",\"type\":\"text\"}],\"type\":\"heading\"}],\"type\":\"doc\"}",
+      "sha256": "864c21dfdb3b13f56b31da6643789a881b4e429bab432303cd10d0763acf1685",
+      "byte_size": 285
+    }
+  ]
+}

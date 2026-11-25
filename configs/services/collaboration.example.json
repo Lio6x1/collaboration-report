@@ -1,0 +1,35 @@
+{
+  "role": "collaboration",
+  "httpPort": 20607,
+  "rpcPort": 20608,
+  "host": "127.0.0.1",
+  "dsn": "collab_collaboration:__COLLABORATION_DB_PASSWORD__@tcp(mysql:3306)/collaboration_db?parseTime=true&timeout=2s&readTimeout=3s&writeTimeout=3s&loc=UTC&time_zone=%27%2B00%3A00%27",
+  "database": {
+    "host": "mysql",
+    "port": 3306,
+    "user": "collab_collaboration",
+    "password": "__COLLABORATION_DB_PASSWORD__",
+    "database": "collaboration_db",
+    "timezone": "Z",
+    "supportBigNumbers": true,
+    "bigNumberStrings": true,
+    "connectionLimit": 8
+  },
+  "certFile": "/app/.runtime/pki/collaboration.pem",
+  "keyFile": "/app/.runtime/pki/collaboration-key.pem",
+  "caFile": "/app/.runtime/pki/ca.pem",
+  "expectedSQLSHA": "__GENERATED_MIGRATION_SHA256__",
+  "expectedAdditionalMigrations": {},
+  "origin": "https://your-domain.example",
+  "root": "/app/",
+  "peers": {
+    "account": "localhost:20602",
+    "accountHttp": "https://127.0.0.1:20601",
+    "edge": "https://localhost:8443",
+    "document": "localhost:20604",
+    "documentHttp": "https://127.0.0.1:20603",
+    "collaboration": "localhost:20608",
+    "collaborationHttp": "https://127.0.0.1:20607",
+    "search": "localhost:20606"
+  }
+}

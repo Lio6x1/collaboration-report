@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://collaboration.example.invalid/schemas/provenance-v1",
+  "title": "Fixed provenance-v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "provenance-v1"
+    },
+    "lineage_id": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,19}$"
+    },
+    "base_manifest_id": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,19}$"
+    },
+    "base_content_version_id": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,19}$"
+    },
+    "source_operation_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$"
+    },
+    "accepted_captures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "capture_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$"
+          },
+          "submitted_content_version_id": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,19}$"
+          },
+          "merge_record_id": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,19}$"
+          },
+          "cut": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "room_id": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,19}$"
+                },
+                "epoch": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,19}$"
+                },
+                "durable_seq": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,19})$"
+                }
+              },
+              "required": [
+                "room_id",
+                "epoch",
+                "durable_seq"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 10000
+          }
+        },
+        "required": [
+          "capture_id",
+          "submitted_content_version_id",
+          "merge_record_id",
+          "cut"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 10000
+    },
+    "block_sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "block_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$"
+          },
+          "origin_content_version_id": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,19}$"
+          },
+          "origin_capture_ref": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$"
+          },
+          "origin_block_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$"
+          },
+          "relation": {
+            "enum": [
+              "UNCHANGED",
+              "EDITED",
+              "COPIED",
+              "SPLIT",
+              "JOINED",
+              "DELETED",
+              "INSERTED"
+            ]
+          },
+          "source_range": {
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              },
+              "end": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "block_id",
+          "origin_block_id",
+          "relation",
+          "source_range"
+        ],
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "origin_content_version_id"
+            ],
+            "not": {
+              "required": [
+                "origin_capture_ref"
+              ]
+            }
+          },
+          {
+            "required": [
+              "origin_capture_ref"
+            ],
+            "not": {
+              "required": [
+                "origin_content_version_id"
+              ]
+            }
+          }
+        ]
+      },
+      "minItems": 0,
+      "maxItems": 100000
+    }
+  },
+  "required": [
+    "schema_version",
+    "lineage_id",
+    "base_manifest_id",
+    "base_content_version_id",
+    "source_operation_id",
+    "accepted_captures",
+    "block_sources"
+  ],
+  "additionalProperties": false
+}

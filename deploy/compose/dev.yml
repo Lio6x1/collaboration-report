@@ -1,0 +1,29 @@
+name: ${COLLAB_PROJECT}
+services:
+  mysql:
+    image: mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+    labels:
+      collaboration.report.owner: ${COLLAB_OWNER}
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_HOST: '%'
+    ports:
+      - '127.0.0.1:${MYSQL_PORT}:3306'
+    command:
+      - '--innodb-flush-log-at-trx-commit=1'
+      - '--default-time-zone=+00:00'
+      - '--innodb-buffer-pool-size=536870912'
+    # 连续大正文/恢复验证中，默认128MiB缓冲池耗尽空闲页，导致只读就绪核验也等待换页。
+    # 512MiB供正文工作集与恢复索引共享；2GiB总上限还要容纳连接、JSON和事务缓冲。
+    # SQL/HTTP期限及规范正文上限保持原值，未知恢复事实仍拒绝READY。
+    mem_limit: 2g
+    volumes:
+      - mysql-data:/var/lib/mysql
+volumes:
+  mysql-data:
+    labels:
+      collaboration.report.owner: ${COLLAB_OWNER}
+networks:
+  default:
+    labels:
+      collaboration.report.owner: ${COLLAB_OWNER}

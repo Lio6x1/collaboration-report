@@ -1,0 +1,463 @@
+{
+  "response_fields": {
+    "Member": {
+      "knowledge_base_creation": {
+        "type": "string",
+        "enum": ["ROLE", "GRANTED", "NONE"],
+        "readOnly": true,
+        "description": "Organization member's current effective knowledge-base creation source. ROLE is inherited from owner/admin and cannot be removed by revoking an individual grant. Omitted outside the organization member directory; display hint only, never an authorization proof."
+      }
+    },
+    "User": {
+      "identity_epoch": {
+        "type": "string",
+        "pattern": "^[1-9][0-9]{0,19}$",
+        "readOnly": true,
+        "description": "Current identity generation, distinct from credential_epoch; used to confirm account closure."
+      }
+    },
+    "ReviewRequest": {
+      "summary": {
+        "$ref": "#/components/schemas/ReviewRequestSummary",
+        "readOnly": true,
+        "description": "Lightweight title and body preview from the request's current immutable review round."
+      }
+    }
+  },
+  "schemas": {
+    "MainReadingRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision"],
+      "description": "Opaque MAIN change hint; grants no access and identifies no public content version.",
+      "properties": {
+        "revision": { "type": "string", "pattern": "^[a-f0-9]{64}$", "readOnly": true }
+      }
+    },
+    "ReviewRequestSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "excerpt", "round_no", "submitter_id", "submitted_at"],
+      "description": "A fixed review-round projection, not a comparison with MAIN or a shared draft.",
+      "properties": {
+        "title": { "type": "string", "maxLength": 240, "readOnly": true },
+        "excerpt": { "type": "string", "maxLength": 141, "readOnly": true, "description": "At most 140 Unicode code points of plain text, followed by an optional truncation ellipsis." },
+        "round_no": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$", "readOnly": true },
+        "submitter_id": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$", "readOnly": true },
+        "submitted_at": { "type": "string", "format": "date-time", "readOnly": true }
+      }
+    },
+    "DocumentCollaborator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["user_id", "display_name"],
+      "description": "An existing active document collaborator candidate with an authoritative account display name. This response does not grant access or disclose account contact details.",
+      "properties": {
+        "user_id": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$", "readOnly": true },
+        "display_name": { "type": "string", "readOnly": true }
+      }
+    },
+    "DocumentCollaboratorPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "has_more"],
+      "properties": {
+        "items": { "type": "array", "items": { "$ref": "#/components/schemas/DocumentCollaborator" }, "readOnly": true },
+        "has_more": { "type": "boolean", "readOnly": true },
+        "next_cursor": { "type": "string", "readOnly": true }
+      }
+    }
+  },
+  "paths": {
+    "/v1/documents/{documentId}/main-revision": {
+      "get": {
+        "operationId": "get__v1_documents__documentId__main_revision",
+        "summary": "READ_MAIN",
+        "description": "Opaque change hint for current MAIN metadata and durable MAIN room tails. Reuses current whole-document read admission and registered output. Does not capture a read view, disclose room identifiers or authorize subsequent reads. BRANCH changes do not change the token.",
+        "tags": ["documents"],
+        "x-authority": "document",
+        "x-required-capability": "READ_MAIN",
+        "parameters": [
+          { "in": "path", "name": "documentId", "required": true, "schema": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" } }
+        ],
+        "responses": {
+          "200": { "description": "Current read-authorized change token", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MainReadingRevision" } } } },
+          "403": { "description": "No current whole-document read access" },
+          "409": { "description": "MAIN changed while sampling; retry the check" },
+          "503": { "description": "Change state temporarily unavailable" }
+        }
+      }
+    },
+    "/v1/documents/{documentId}/mention-candidates": {
+      "get": {
+        "operationId": "get__v1_documents__documentId__mention_candidates",
+        "summary": "COMMENT",
+        "description": "List mention candidates only after current document COMMENT admission. Organization documents reuse the current visible active member directory; personal documents include only actual document collaborators. Names come from Account authority, each target binds current identity sources, and keyset cursors bind actor, document, purpose and ACL revision. Candidates confer no authorization; notification delivery still checks current access to the original comment context.",
+        "tags": ["documents"],
+        "x-authority": "document",
+        "x-required-capability": "COMMENT",
+        "parameters": [
+          { "in": "path", "name": "documentId", "required": true, "schema": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" } },
+          { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } },
+          { "in": "query", "name": "cursor", "schema": { "type": "string" } }
+        ],
+        "security": [{ "sessionCookie": [] }],
+        "responses": {
+          "200": { "description": "Current document mention candidates", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DocumentCollaboratorPage" } } } },
+          "400": { "description": "Invalid limit or cursor", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Current session required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Current document comment capability required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Document missing", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Access facts or cursor binding changed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "Current identity or directory unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/v1/documents/{documentId}/collaborators": {
+      "get": {
+        "operationId": "get__v1_documents__documentId__collaborators",
+        "summary": "DOCUMENT_MANAGEMENT",
+        "description": "List current active organization members for organization documents; for personal documents list distinct active document grant recipients plus the responsible user and personal owner. Restricted to current document managers. Current target identity and organization membership are revalidated; keyset cursors bind actor, document and ACL revision. Candidates confer no authorization.",
+        "tags": ["documents"],
+        "x-authority": "document",
+        "x-required-capability": "DOCUMENT_MANAGEMENT",
+        "parameters": [
+          { "in": "path", "name": "documentId", "required": true, "schema": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" } },
+          { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } },
+          { "in": "query", "name": "cursor", "schema": { "type": "string" } }
+        ],
+        "security": [{ "sessionCookie": [] }],
+        "responses": {
+          "200": { "description": "Existing collaborator candidates", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DocumentCollaboratorPage" } } } },
+          "400": { "description": "Invalid limit or cursor", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Current session required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Current document management required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Document missing", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Access facts or cursor binding changed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "Current identity or directory unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/v1/retained-public/documents/{documentId}": {
+      "get": {
+        "operationId": "get__v1_retained_public_documents__documentId_",
+        "summary": "PLATFORM_RETAINED_PUBLIC_GOVERNANCE",
+        "description": "Read isolated retained publication metadata and its current control revision after verifying the current Account platform governance role. Does not admit body reading or collaboration.",
+        "tags": ["retained-public"],
+        "x-authority": "document",
+        "x-required-capability": "PLATFORM_RETAINED_PUBLIC_GOVERNANCE",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "documentId",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" }
+          }
+        ],
+        "security": [{ "sessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Current retained metadata",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Document" } }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Current session required",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Current platform governance role and isolated retention required",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Document missing",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Retention facts changed",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Qualification cannot currently be confirmed",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/v1/comment-threads/{threadId}": {
+      "get": {
+        "operationId": "get__v1_comment_threads__threadId_",
+        "summary": "CONTEXT_ACCESS",
+        "description": "Current identity, scope, lifecycle and expected revisions are rechecked. Mutations bind operation_id to actor, kind, target and canonical public input.",
+        "tags": ["comment-threads"],
+        "x-authority": "document",
+        "x-required-capability": "CONTEXT_ACCESS",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "threadId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]{0,19}$",
+              "description": "Unsigned 64-bit entity ID as decimal text; server enforces uint64 range."
+            }
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentThread"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/notifications/{notificationId}/review-round": {
+      "get": {
+        "operationId": "get__v1_notifications__notificationId__review_round",
+        "summary": "NOTIFICATION_REVIEW_ROUND",
+        "description": "Read the original immutable review round bound to a notification owned by the current recipient, after revalidating current document and review access.",
+        "tags": ["notifications"],
+        "x-authority": "document",
+        "x-required-capability": "CONTEXT_ACCESS",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notificationId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]{0,19}$",
+              "description": "Unsigned 64-bit entity ID as decimal text; server enforces uint64 range."
+            }
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewRound"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Business error; status never implies an unknown transaction did not commit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

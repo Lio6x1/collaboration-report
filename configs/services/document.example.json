@@ -1,0 +1,49 @@
+{
+  "role": "document",
+  "httpPort": 20603,
+  "rpcPort": 20604,
+  "host": "127.0.0.1",
+  "dsn": "collab_document:__DOCUMENT_DB_PASSWORD__@tcp(mysql:3306)/document_db?parseTime=true&timeout=2s&readTimeout=3s&writeTimeout=3s&loc=UTC&time_zone=%27%2B00%3A00%27",
+  "database": {
+    "host": "mysql",
+    "port": 3306,
+    "user": "collab_document",
+    "password": "__DOCUMENT_DB_PASSWORD__",
+    "database": "document_db",
+    "timezone": "Z",
+    "supportBigNumbers": true,
+    "bigNumberStrings": true,
+    "connectionLimit": 8
+  },
+  "certFile": "/app/.runtime/pki/document.pem",
+  "keyFile": "/app/.runtime/pki/document-key.pem",
+  "caFile": "/app/.runtime/pki/ca.pem",
+  "expectedSQLSHA": "__GENERATED_MIGRATION_SHA256__",
+  "expectedAdditionalMigrations": {},
+  "origin": "https://your-domain.example",
+  "root": "/app/",
+  "peers": {
+    "account": "localhost:20602",
+    "accountHttp": "https://127.0.0.1:20601",
+    "edge": "https://localhost:8443",
+    "document": "localhost:20604",
+    "documentHttp": "https://127.0.0.1:20603",
+    "collaboration": "localhost:20608",
+    "collaborationHttp": "https://127.0.0.1:20607",
+    "search": "localhost:20606"
+  },
+  "resources": {
+    "root": "/app/.runtime/resources/document",
+    "spaceBytes": 1073741824,
+    "uploadBytes": 33554432,
+    "temporaryBytes": 268435456,
+    "uploadTTLSeconds": 3600
+  },
+  "exports": {
+    "root": "/app/.runtime/exports/document",
+    "pandoc": "/usr/local/bin/pandoc",
+    "node": "/usr/local/bin/node",
+    "browser": "",
+    "workers": 1
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "version": 9,
+  "parentSHA256": "07f5216b09b0af15fb7265a5f2d0bb4c17a993d413526531cd5bd0c1c4aa0190",
+  "sha256": "13a933e1903f730c01937d1d727b059ab02b212c8d57a9667ddf9c0acee715f2",
+  "tables": [
+    {
+      "database": "account_db",
+      "name": "platform_governance_grant",
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "epoch",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "revision",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "state",
+          "type": "varchar(16)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "changed_operation_id",
+          "type": "varchar(96)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(6)",
+          "nullable": false
+        }
+      ],
+      "primaryKey": ["user_id"]
+    }
+  ]
+}

@@ -1,0 +1,163 @@
+{
+  "version": 3,
+  "parentSHA256": "c1281e2ff585f0763e110b540f5246d2c9fd9eadc294883ce7d0a26ed5288a86",
+  "sha256": "b126962072d04635354dd7b756866a439afd5a4607ebfec8bd0422a4a627631e",
+  "tables": [
+    {
+      "database": "search_db",
+      "name": "event_origin",
+      "primaryKey": ["consumer_name", "event_id"],
+      "columns": [
+        {
+          "name": "consumer_name",
+          "type": "varchar(40)",
+          "nullable": false
+        },
+        {
+          "name": "event_id",
+          "type": "varchar(96)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "raw_digest",
+          "type": "binary(32)",
+          "nullable": false
+        },
+        {
+          "name": "original_row",
+          "type": "mediumblob",
+          "nullable": false
+        },
+        {
+          "name": "kafka_topic",
+          "type": "varchar(160)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "kafka_partition",
+          "type": "int unsigned",
+          "nullable": false
+        },
+        {
+          "name": "kafka_offset",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "applied_index",
+          "type": "varchar(160)",
+          "nullable": true,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "applied_seq",
+          "type": "bigint unsigned",
+          "nullable": true
+        },
+        {
+          "name": "authority_digest",
+          "type": "binary(32)",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "database": "search_db",
+      "name": "index_application",
+      "primaryKey": ["physical_index", "document_id"],
+      "columns": [
+        {
+          "name": "physical_index",
+          "type": "varchar(160)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "document_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "applied_seq",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "authority_digest",
+          "type": "binary(32)",
+          "nullable": false
+        },
+        {
+          "name": "release_id",
+          "type": "bigint unsigned",
+          "nullable": true
+        },
+        {
+          "name": "visibility",
+          "type": "varchar(16)",
+          "nullable": false
+        },
+        {
+          "name": "visibility_policy",
+          "type": "varchar(16)",
+          "nullable": false
+        },
+        {
+          "name": "revision",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(6)",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "database": "search_db",
+      "name": "consumer_checkpoint",
+      "primaryKey": ["consumer_name", "kafka_topic", "partition_id"],
+      "columns": [
+        {
+          "name": "consumer_name",
+          "type": "varchar(40)",
+          "nullable": false
+        },
+        {
+          "name": "kafka_topic",
+          "type": "varchar(160)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "partition_id",
+          "type": "int unsigned",
+          "nullable": false
+        },
+        {
+          "name": "next_offset",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "revision",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(6)",
+          "nullable": false
+        }
+      ]
+    }
+  ]
+}

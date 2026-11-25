@@ -1,0 +1,266 @@
+{
+  "version": 4,
+  "parentSHA256": "b126962072d04635354dd7b756866a439afd5a4607ebfec8bd0422a4a627631e",
+  "sha256": "7425eb1ed7ce962ce6a362e9646062949164c6c9a5d0151dfebce4c41d49a874",
+  "tables": [
+    {
+      "database": "document_db",
+      "name": "search_snapshot_job",
+      "primaryKey": [
+        "operation_id"
+      ],
+      "columns": [
+        {
+          "name": "operation_id",
+          "type": "varchar(96)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "prepare_digest",
+          "type": "binary(32)",
+          "nullable": false
+        },
+        {
+          "name": "prepare_envelope",
+          "type": "mediumblob",
+          "nullable": false
+        },
+        {
+          "name": "state",
+          "type": "varchar(16)",
+          "nullable": false
+        },
+        {
+          "name": "entry_count",
+          "type": "bigint unsigned",
+          "nullable": true
+        },
+        {
+          "name": "entries_digest",
+          "type": "binary(32)",
+          "nullable": true
+        },
+        {
+          "name": "seal_envelope",
+          "type": "mediumblob",
+          "nullable": true
+        },
+        {
+          "name": "signer_digest",
+          "type": "binary(32)",
+          "nullable": false
+        },
+        {
+          "name": "revision",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "database": "document_db",
+      "name": "search_snapshot_entry",
+      "primaryKey": [
+        "operation_id",
+        "document_id"
+      ],
+      "columns": [
+        {
+          "name": "operation_id",
+          "type": "varchar(96)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "document_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "minimum_seq",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "release_hint",
+          "type": "bigint unsigned",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "database": "search_db",
+      "name": "rebuild_binding",
+      "primaryKey": [
+        "operation_id"
+      ],
+      "columns": [
+        {
+          "name": "operation_id",
+          "type": "varchar(96)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "alias_name",
+          "type": "varchar(160)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "source_index",
+          "type": "varchar(160)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "source_generation",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "source_revision",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "target_index",
+          "type": "varchar(160)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "target_generation",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "prepare_digest",
+          "type": "binary(32)",
+          "nullable": false
+        },
+        {
+          "name": "prepare_signer_digest",
+          "type": "binary(32)",
+          "nullable": false
+        },
+        {
+          "name": "prepare_envelope",
+          "type": "mediumblob",
+          "nullable": false
+        },
+        {
+          "name": "state",
+          "type": "varchar(16)",
+          "nullable": false
+        },
+        {
+          "name": "snapshot_digest",
+          "type": "binary(32)",
+          "nullable": true
+        },
+        {
+          "name": "snapshot_envelope",
+          "type": "mediumblob",
+          "nullable": true
+        },
+        {
+          "name": "snapshot_count",
+          "type": "bigint unsigned",
+          "nullable": true
+        },
+        {
+          "name": "entries_digest",
+          "type": "binary(32)",
+          "nullable": true
+        },
+        {
+          "name": "signer_digest",
+          "type": "binary(32)",
+          "nullable": true
+        },
+        {
+          "name": "request_fingerprint",
+          "type": "binary(32)",
+          "nullable": true
+        },
+        {
+          "name": "job_id",
+          "type": "bigint unsigned",
+          "nullable": true
+        },
+        {
+          "name": "revision",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "database": "search_db",
+      "name": "rebuild_progress",
+      "primaryKey": [
+        "job_id"
+      ],
+      "columns": [
+        {
+          "name": "job_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "snapshot_after",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "validation_after",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "frontier_payload",
+          "type": "mediumblob",
+          "nullable": true
+        },
+        {
+          "name": "validation_digest",
+          "type": "binary(32)",
+          "nullable": true
+        },
+        {
+          "name": "worker_nonce",
+          "type": "binary(32)",
+          "nullable": true
+        },
+        {
+          "name": "worker_instance",
+          "type": "varchar(160)",
+          "nullable": true,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "lease_until",
+          "type": "datetime(6)",
+          "nullable": true
+        },
+        {
+          "name": "revision",
+          "type": "bigint unsigned",
+          "nullable": false
+        }
+      ]
+    }
+  ]
+}

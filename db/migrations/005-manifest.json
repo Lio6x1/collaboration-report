@@ -1,0 +1,49 @@
+{
+  "version": 5,
+  "parentSHA256": "7425eb1ed7ce962ce6a362e9646062949164c6c9a5d0151dfebce4c41d49a874",
+  "sha256": "368ba73e6746ca5c840d58035a10a5a34c5443ce071652dea62c8dfd6d8d1ecf",
+  "tables": [
+    {
+      "database": "search_db",
+      "name": "consumer_log_identity",
+      "primaryKey": [
+        "consumer_name"
+      ],
+      "columns": [
+        {
+          "name": "consumer_name",
+          "type": "varchar(40)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "kafka_topic",
+          "type": "varchar(160)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "cluster_id",
+          "type": "varchar(160)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "topic_id",
+          "type": "binary(16)",
+          "nullable": false
+        },
+        {
+          "name": "revision",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "nullable": false
+        }
+      ]
+    }
+  ]
+}

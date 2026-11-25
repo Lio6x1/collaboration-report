@@ -1,0 +1,50 @@
+# 仅真实partial分片夹具使用；独立project/network/volumes，绝不复用产品es-data。
+services:
+  partial-a:
+    image: docker.elastic.co/elasticsearch/elasticsearch@sha256:13bb550524faa2aef6950b13fb6414c73b957e97e6169e5808743c8378614599
+    labels:
+      collaboration.report.owner: ${COLLAB_PARTIAL_OWNER:?required}
+      collaboration.report.partial-fixture: ${COLLAB_PARTIAL_FIXTURE:?required}
+    environment:
+      cluster.name: partial-${COLLAB_PARTIAL_FIXTURE}
+      node.name: partial-a
+      node.roles: master,data
+      discovery.seed_hosts: partial-a,partial-b
+      cluster.initial_master_nodes: partial-a
+      xpack.security.enabled: 'false'
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - '127.0.0.1:${COLLAB_PARTIAL_PORT:?required}:9200'
+    mem_limit: 1g
+    volumes:
+      - partial-a-data:/usr/share/elasticsearch/data
+  partial-b:
+    image: docker.elastic.co/elasticsearch/elasticsearch@sha256:13bb550524faa2aef6950b13fb6414c73b957e97e6169e5808743c8378614599
+    labels:
+      collaboration.report.owner: ${COLLAB_PARTIAL_OWNER:?required}
+      collaboration.report.partial-fixture: ${COLLAB_PARTIAL_FIXTURE:?required}
+    environment:
+      cluster.name: partial-${COLLAB_PARTIAL_FIXTURE}
+      node.name: partial-b
+      # B不可选master；停B时A仍保持唯一master，故障不是整个集群不可用。
+      node.roles: data
+      discovery.seed_hosts: partial-a
+      xpack.security.enabled: 'false'
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    mem_limit: 1g
+    volumes:
+      - partial-b-data:/usr/share/elasticsearch/data
+networks:
+  default:
+    labels:
+      collaboration.report.owner: ${COLLAB_PARTIAL_OWNER}
+      collaboration.report.partial-fixture: ${COLLAB_PARTIAL_FIXTURE}
+volumes:
+  partial-a-data:
+    labels:
+      collaboration.report.owner: ${COLLAB_PARTIAL_OWNER}
+      collaboration.report.partial-fixture: ${COLLAB_PARTIAL_FIXTURE}
+  partial-b-data:
+    labels:
+      collaboration.report.owner: ${COLLAB_PARTIAL_OWNER}
+      collaboration.report.partial-fixture: ${COLLAB_PARTIAL_FIXTURE}

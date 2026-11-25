@@ -1,0 +1,131 @@
+[
+  {
+    "id": "C01",
+    "title": "正文契约、隔离候选与连续日志恢复",
+    "page": "lessons/collaboration/01-content-replay.md",
+    "files": [
+      "packages/content/index.mjs",
+      "packages/content/markdown.mjs",
+      "services/collaboration/src/domain/shared_protocol.mjs",
+      "services/collaboration/src/domain/room_replay.mjs",
+      "services/collaboration/src/repository/sql.mjs",
+      "services/collaboration/src/repository/room_snapshots.mjs",
+      "services/collaboration/src/application/room_snapshots.mjs",
+      "services/collaboration/src/application/serialized_rooms.mjs"
+    ]
+  },
+  {
+    "id": "C02",
+    "title": "真实准入、UPDATE持久确认与FLUSH",
+    "page": "lessons/collaboration/02-admission-save.md",
+    "files": [
+      "services/collaboration/src/client/peers.mjs",
+      "services/collaboration/src/repository/source_gates.mjs",
+      "services/collaboration/src/repository/room_access.mjs",
+      "services/collaboration/src/repository/room_persistence.mjs",
+      "services/collaboration/src/repository/resource_confirmations.mjs",
+      "services/collaboration/src/repository/persistence_outcome.mjs",
+      "services/collaboration/src/application/admission_gates.mjs",
+      "services/collaboration/src/application/room_admissions.mjs",
+      "services/collaboration/src/application/room_io.mjs",
+      "services/collaboration/src/application/persistence_outcome.mjs",
+      "services/collaboration/src/worker/resource_recovery.mjs"
+    ]
+  },
+  {
+    "id": "C03",
+    "title": "撤权门闩、真实输出排空与进程恢复",
+    "page": "lessons/collaboration/03-fence-recovery.md",
+    "files": [
+      "services/collaboration/src/domain/fence_protocol.mjs",
+      "services/collaboration/src/repository/fences.mjs",
+      "services/collaboration/src/application/fences.mjs",
+      "services/collaboration/src/application/bootstrap_fence.mjs",
+      "services/collaboration/src/worker/fence_recovery.mjs",
+      "services/collaboration/src/repository/output_instances.mjs",
+      "services/collaboration/src/client/process_probe_linux.mjs",
+      "services/collaboration/src/client/process_owner.mjs",
+      "services/collaboration/src/worker/output_recovery.mjs",
+      "services/collaboration/src/fence.mjs"
+    ]
+  },
+  {
+    "id": "C04",
+    "title": "固定送审、三方合并与草稿变换",
+    "page": "lessons/collaboration/04-fixed-workflows.md",
+    "files": [
+      "services/collaboration/src/domain/merge/values.mjs",
+      "services/collaboration/src/domain/merge/inline.mjs",
+      "services/collaboration/src/domain/merge/blocks.mjs",
+      "services/collaboration/src/domain/content_merge.mjs",
+      "services/collaboration/src/domain/merge_protocol.mjs",
+      "services/collaboration/src/domain/capture_protocol.mjs",
+      "services/collaboration/src/domain/main_protocol.mjs",
+      "services/collaboration/src/domain/main_workspace.mjs",
+      "services/collaboration/src/domain/resolution_draft.mjs",
+      "services/collaboration/src/domain/reverse_draft.mjs",
+      "services/collaboration/src/domain/draft_protocol.mjs",
+      "services/collaboration/src/domain/discard_confirmation.mjs",
+      "services/collaboration/src/repository/candidate_artifacts.mjs",
+      "services/collaboration/src/repository/draft_transitions.mjs",
+      "services/collaboration/src/repository/main_workspace.mjs",
+      "services/collaboration/src/application/submission_captures.mjs",
+      "services/collaboration/src/application/merge_executor.mjs",
+      "services/collaboration/src/worker/merge_thread.mjs",
+      "services/collaboration/src/application/merge_candidates.mjs",
+      "services/collaboration/src/application/draft_previews.mjs",
+      "services/collaboration/src/application/draft_transitions.mjs",
+      "services/collaboration/src/application/main_workflows.mjs"
+    ]
+  },
+  {
+    "id": "C05",
+    "title": "结构拆并与每个在线编辑器保存握手",
+    "page": "lessons/collaboration/05-structure-online.md",
+    "files": [
+      "services/collaboration/src/domain/structure_content.mjs",
+      "services/collaboration/src/domain/structure_migration.mjs",
+      "services/collaboration/src/domain/structure_preview_protocol.mjs",
+      "services/collaboration/src/domain/structure_preparation.mjs",
+      "services/collaboration/src/repository/structure_workspace.mjs",
+      "services/collaboration/src/application/structure_previews.mjs",
+      "services/collaboration/src/application/structure_preparations.mjs",
+      "services/collaboration/src/application/structure_installations.mjs",
+      "services/collaboration/src/transport/output_sessions.mjs"
+    ]
+  },
+  {
+    "id": "C06",
+    "title": "固定候选清理、账号清理与转移计量",
+    "page": "lessons/collaboration/06-cleanup-storage.md",
+    "files": [
+      "services/collaboration/src/domain/account_document_cleanup.mjs",
+      "services/collaboration/src/repository/account_document_cleanup.mjs",
+      "services/collaboration/src/application/account_document_cleanup.mjs",
+      "services/collaboration/src/domain/personal_transfer_storage.mjs",
+      "services/collaboration/src/repository/personal_transfer_storage.mjs",
+      "services/collaboration/src/application/personal_transfer_storage.mjs",
+      "services/collaboration/src/application/candidate_cleanup.mjs"
+    ]
+  },
+  {
+    "id": "C07",
+    "title": "协作完整依赖装配、传输与就绪",
+    "page": "lessons/collaboration/07-wiring-readiness.md",
+    "files": [
+      "services/collaboration/src/repository/readiness.mjs",
+      "services/collaboration/src/application/readiness.mjs",
+      "services/collaboration/src/application/runtime_metrics.mjs",
+      "services/collaboration/src/application/room_engine.mjs",
+      "services/collaboration/src/bootstrap/room_components.mjs",
+      "services/collaboration/src/rooms.mjs",
+      "services/collaboration/src/transport/rpc_authorization.mjs",
+      "services/collaboration/src/transport/rpc.mjs",
+      "services/collaboration/src/transport/http.mjs",
+      "services/collaboration/src/transport/wss.mjs",
+      "services/collaboration/src/bootstrap/store.mjs",
+      "services/collaboration/src/bootstrap/runtime.mjs",
+      "services/collaboration/src/main.mjs"
+    ]
+  }
+]

@@ -1,0 +1,47 @@
+{
+  "role": "account",
+  "httpPort": 20601,
+  "rpcPort": 20602,
+  "host": "127.0.0.1",
+  "dsn": "collab_account:__ACCOUNT_DB_PASSWORD__@tcp(mysql:3306)/account_db?parseTime=true&timeout=2s&readTimeout=3s&writeTimeout=3s&loc=UTC&time_zone=%27%2B00%3A00%27",
+  "database": {
+    "host": "mysql",
+    "port": 3306,
+    "user": "collab_account",
+    "password": "__ACCOUNT_DB_PASSWORD__",
+    "database": "account_db",
+    "timezone": "Z",
+    "supportBigNumbers": true,
+    "bigNumberStrings": true,
+    "connectionLimit": 8
+  },
+  "certFile": "/app/.runtime/pki/account.pem",
+  "keyFile": "/app/.runtime/pki/account-key.pem",
+  "caFile": "/app/.runtime/pki/ca.pem",
+  "expectedSQLSHA": "__GENERATED_MIGRATION_SHA256__",
+  "expectedAdditionalMigrations": {},
+  "origin": "https://your-domain.example",
+  "root": "/app/",
+  "peers": {
+    "account": "localhost:20602",
+    "accountHttp": "https://127.0.0.1:20601",
+    "edge": "https://localhost:8443",
+    "document": "localhost:20604",
+    "documentHttp": "https://127.0.0.1:20603",
+    "collaboration": "localhost:20608",
+    "collaborationHttp": "https://127.0.0.1:20607",
+    "search": "localhost:20606"
+  },
+  "redis": {
+    "host": "redis:6379",
+    "user": "account_login",
+    "password": "__REDIS_PASSWORD__"
+  },
+  "smtp": {
+    "address": "__SMTP_ADDRESS__",
+    "from": "no-reply@your-domain.example",
+    "security": "starttls",
+    "credentialsFile": "/app/.runtime/private/smtp-credentials.json"
+  },
+  "challengeKey": "__GENERATED_CHALLENGE_KEY__"
+}

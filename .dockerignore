@@ -1,0 +1,18 @@
+# 运行事实和私密配置通过独立卷挂载，绝不进入镜像构建上下文。
+.git
+.runtime
+artifacts
+.agents
+.codex
+**/node_modules
+node_modules
+**/.runtime
+**/artifacts
+docs
+tests
+tools
+web/dist
+**/.env
+**/.env.*
+**/*credentials*.json
+*.log

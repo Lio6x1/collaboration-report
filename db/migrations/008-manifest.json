@@ -1,0 +1,77 @@
+{
+  "version": 8,
+  "parentSHA256": "9af4126816f6fa09bf11048a98347c59ffd69a0ece0d2c25824532b9680517b2",
+  "sha256": "07f5216b09b0af15fb7265a5f2d0bb4c17a993d413526531cd5bd0c1c4aa0190",
+  "tables": [
+    {
+      "columns": [
+        {
+          "nullable": false,
+          "name": "job_id",
+          "type": "bigint unsigned"
+        },
+        {
+          "nullable": false,
+          "name": "fingerprint",
+          "type": "binary(32)"
+        },
+        {
+          "nullable": false,
+          "name": "snapshot",
+          "type": "mediumblob"
+        },
+        {
+          "nullable": false,
+          "name": "reserved_bytes",
+          "type": "bigint unsigned"
+        },
+        {
+          "nullable": true,
+          "name": "artifact_key",
+          "collation": "ascii_bin",
+          "type": "varchar(64)"
+        },
+        {
+          "nullable": false,
+          "name": "artifact_size",
+          "type": "bigint unsigned"
+        },
+        {
+          "nullable": true,
+          "name": "artifact_checksum",
+          "type": "binary(32)"
+        },
+        {
+          "nullable": false,
+          "name": "expires_at",
+          "type": "datetime(6)"
+        }
+      ],
+      "name": "export_control",
+      "database": "document_db",
+      "primaryKey": ["job_id"]
+    },
+    {
+      "columns": [
+        {
+          "nullable": false,
+          "name": "id",
+          "type": "int unsigned"
+        },
+        {
+          "nullable": false,
+          "name": "reserved_bytes",
+          "type": "bigint unsigned"
+        },
+        {
+          "nullable": false,
+          "name": "used_bytes",
+          "type": "bigint unsigned"
+        }
+      ],
+      "name": "export_budget",
+      "database": "document_db",
+      "primaryKey": ["id"]
+    }
+  ]
+}

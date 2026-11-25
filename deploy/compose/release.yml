@@ -1,0 +1,21 @@
+# Windows单机发行层：保留已有摘要镜像、私有端口和持久卷，只限制日志积压
+# 并允许依赖异常退出后重启。显式compose stop仍保持停止，冷备份不被自动打断。
+# 应用由核验PID/绝对入口/run-owner的Windows监督器管理，不按进程名重启。
+x-release: &release
+  restart: unless-stopped
+  logging:
+    driver: local
+    options:
+      max-size: '20m'
+      max-file: '5'
+services:
+  mysql:
+    <<: *release
+  redis:
+    <<: *release
+  kafka:
+    <<: *release
+  es:
+    <<: *release
+  canal:
+    <<: *release

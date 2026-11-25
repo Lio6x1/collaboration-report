@@ -1,0 +1,25 @@
+{
+  "version": 6,
+  "parentSHA256": "368ba73e6746ca5c840d58035a10a5a34c5443ce071652dea62c8dfd6d8d1ecf",
+  "sha256": "c421fef5a214fb588c1cdff2fd305c9f7e371e8e59c07b504893c2bd2f9fdeeb",
+  "indexes": [
+    {
+      "database": "collaboration_db",
+      "table": "durable_task",
+      "name": "task_document",
+      "columns": [
+        "cleanup_document",
+        "kind",
+        "id"
+      ],
+      "generatedColumns": [
+        {
+          "name": "cleanup_document",
+          "type": "varchar(20)",
+          "collation": "ascii_bin",
+          "expression": "coalesce(json_unquote(json_extract(payload,'$.binding.context.target.document_id')),json_unquote(json_extract(payload,'$.context.target.document_id')),json_unquote(json_extract(payload,'$.query.context.target.document_id')),json_unquote(json_extract(payload,'$.document_id')))"
+        }
+      ]
+    }
+  ]
+}

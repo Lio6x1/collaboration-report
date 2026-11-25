@@ -1,0 +1,43 @@
+{
+  "version": 13,
+  "parentSHA256": "2f1a07cb43568f8b89ec9e16ef849dce98ef86d544a2a7e11851e3fc61f08442",
+  "sha256": "3ec9dd5d5d1813bdf330522410b681dead532399c11ea4cc347853ff1ef9a36b",
+  "tables": [
+    {
+      "database": "document_db",
+      "name": "document_sharing_archive",
+      "columns": [
+        {
+          "name": "record_kind",
+          "type": "varchar(16)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "record_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "document_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "actor_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "archived_at",
+          "type": "datetime(6)",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "record_kind",
+        "record_id"
+      ]
+    }
+  ]
+}

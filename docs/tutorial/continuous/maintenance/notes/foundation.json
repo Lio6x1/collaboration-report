@@ -1,0 +1,1216 @@
+{
+  "files": {
+    "contracts/content/decode.go": {
+      "purpose": "严格读取固定正文JSON，保留唯一且可验证的输入含义。",
+      "why": "标准json.Unmarshal会接受重复键并替换某些非法Unicode；固定正文用于摘要和跨Go/Node比较，不能容忍静默改写。",
+      "flow": [
+        "Decode先限32MiB并检查UTF8、JSON语法和代理项。",
+        "decodeValue逐token读取，拒绝重复对象键，限制深度128和总节点100万，整数限制在±2147483647。",
+        "validSurrogates要求高代理项紧随低代理项，拒绝孤立低代理项。"
+      ],
+      "pitfalls": [
+        "不能使用float64读取数字后再转整数；不能接受尾随第二份JSON。"
+      ],
+      "symbols": {},
+      "source_sha256": "05574c80fcc896bc8bfd57b923b5c69b78cd75e766c2158388ce9cbf710f189a"
+    },
+    "contracts/content/canonical.go": {
+      "purpose": "把已解码正文写成Go与Node一致的canonical-v1字节。",
+      "why": "正文摘要必须针对相同字节；Go字符串UTF8排序与JavaScript UTF16键序可能不同，因此显式比较UTF16编码。",
+      "flow": [
+        "writeCanonical对对象键用nodeStringLess排序，数组保持原顺序，字符串保留空白和Unicode。",
+        "整数只接受json.Number且落在规范范围，布尔/null固定编码，字符串关闭HTML转义。"
+      ],
+      "pitfalls": [
+        "不能Trim正文、排序数组或把数字转科学计数法；这些改变会破坏固定内容摘要。"
+      ],
+      "symbols": {},
+      "source_sha256": "70d90e793ecbd8055992c9ef8f5cbe898d6f0ceea9f64b509c4e2d815b982837"
+    },
+    "contracts/content/validator.go": {
+      "purpose": "编译内嵌正文/来源schema，并受限合并段落格式扩展。",
+      "why": "验证规则必须由发布版本确定，不能让运行时网络或任意文件替换schema。",
+      "flow": [
+        "NewValidator从embed.FS读取契约，先Decode再编译，编译结果并发复用。",
+        "mergeParagraphFormattingExtension仅允许paragraph/heading新增align及firstLineIndent，克隆原schema后修改。",
+        "Body和Provenance把验证失败统一映射ErrInvalid。"
+      ],
+      "pitfalls": [
+        "扩展不得改required/additionalProperties或覆盖既有字段；embeddedOnly拒绝远端加载。"
+      ],
+      "symbols": {
+        "Validator": {
+          "fields": {
+            "body": "已经编译的content正文schema，Body调用它验证固定正文树。",
+            "provenance": "已经编译的来源schema，Provenance校验固定内容出处。"
+          }
+        },
+        "embeddedOnly.Load": {
+          "params": {
+            "(匿名/未命名)": "外部schema引用地址；参数故意不用，所有外部加载一律SCHEMA_NOT_EMBEDDED。"
+          }
+        }
+      },
+      "source_sha256": "393555d5a74c1cc45782d327a6cdd7aebc00d137d554319615d865ef72952146"
+    },
+    "db/migrations/001.up.sql": {
+      "purpose": "建立四个服务私有数据库及固定正文、权限、回执和恢复的基础事实表。",
+      "why": "四库按权威职责隔离；本库外键保障内部一致，跨服务事实通过协议验证而不是跨库JOIN。",
+      "flow": [
+        "Account保存user/session/organization及identity_admission；Document保存文档、版本、manifest、评审和授权输出。",
+        "Collaboration保存room、更新日志、检查点及flush/capture/install回执；Search保存消费去重、索引代次和重建任务。",
+        "各库schema_migration记录原SQL摘要；operation_receipt/durable_task/access_gate/authorization_ack分别记录原结果、恢复意图、关闭水位与参与者确认。"
+      ],
+      "pitfalls": [
+        "此文件是fresh installation基线，已安装后不得改字节或重复执行；后续变更追加迁移。",
+        "不能用ON DELETE CASCADE随意抹掉固定历史或回执，基础外键大量采用RESTRICT。"
+      ],
+      "symbols": {
+        "schema_migration": {
+          "why": "保存已执行迁移版本和原SQL摘要；Store.CheckReady与可信发布配置逐项核对，连接成功也不能绕过它。"
+        },
+        "user": {
+          "why": "Account唯一账号权威，保存邮箱键、密码哈希及身份/凭据代次；session与组织成员引用该身份。"
+        },
+        "session": {
+          "why": "把浏览器随机令牌摘要绑定到用户和凭据代次；自身epoch支持单会话退出，原行保留给关闭恢复。"
+        },
+        "verification_consumption": {
+          "why": "用挑战唯一键记录验证码的一次性消费，与注册或凭据变更同事务；Redis验证可重放也不能重复改库。"
+        },
+        "organization": {
+          "why": "保存组织owner、生命周期与资料/成员集合修订；成员与邀请只在当前组织资格下生效。"
+        },
+        "organization_member": {
+          "why": "保存组织中每个用户的role/state/epoch，作为成员、管理和建库资格来源；撤权不靠删除行抹掉旧代次。"
+        },
+        "organization_invitation": {
+          "why": "存邀请令牌摘要、加密原文和有效期，申请只引用经验证邀请事实，不能直接绕过审核加入。"
+        },
+        "organization_application": {
+          "why": "记录待审入组织申请及提交时邀请有效性，与后来邀请取消区分；审核结果驱动成员关系变化。"
+        },
+        "organization_creation_grant": {
+          "why": "为普通组织成员保存独立建库资格，角色与显式授权分开撤销，不能把MEMBER默认当可建库。"
+        },
+        "identity_admission": {
+          "why": "固定短期真实身份准入，绑定会话、原操作、purpose与target；来源撤销时关闭该证明。"
+        },
+        "admission_source": {
+          "why": "把一份准入关联到它依赖的每个scope/epoch；关闭某来源可定位所有旧证明，不能只保存笼统角色字符串。"
+        },
+        "account_close": {
+          "why": "保存账号注销的固定组织图、保留计划和阶段，跨服务未知时仍沿原号恢复。"
+        },
+        "organization_transition": {
+          "why": "保存角色变更、所有者转移或关闭的固定计划；先FENCING取得真实下游ACK，再结束本地成员变化。"
+        },
+        "operation_receipt": {
+          "why": "以原operation_id保存发起人、请求指纹、目标和结果，使响应丢失后的重试读取原事实；不是当前业务对象的替代品。"
+        },
+        "durable_task": {
+          "why": "在业务事务里登记后台恢复意图，租约只控制领取者，不能用任务到期推断业务终态。"
+        },
+        "access_gate": {
+          "why": "保存每个来源关闭的最高epoch与OPEN/BLOCKED状态，阻止旧资格在重启或延迟请求中重新生效。"
+        },
+        "authorization_change": {
+          "why": "记录一个原撤销号固定关闭的scope/epoch和参与者计划，ACK必须回到此原记录。"
+        },
+        "authorization_ack": {
+          "why": "持久保存参与者在指定来源/代次/阶段的真实摘要确认，不能凭超时或空参与者宣称输出停止。"
+        },
+        "outbox": {
+          "why": "把业务提交和待发布事件同事务保存，随后可靠投递；网络发布失败不能丢掉已经提交的业务事件。"
+        },
+        "notification": {
+          "why": "保存按收件人及事件身份去重的通知投影，原事件和实际收件资格仍由权威服务核验。"
+        },
+        "audit_event": {
+          "why": "追加记录原操作对应的行为事实；不可用更新覆盖历史来修正当前显示。"
+        },
+        "space": {
+          "why": "把文档归属绑定到个人或组织空间，是访问边界和容量账户的根。"
+        },
+        "knowledge_base": {
+          "why": "保存空间下知识库的生命周期和管理员边界，文档可以引用其组织结构。"
+        },
+        "knowledge_base_member": {
+          "why": "保存知识库成员角色与资格代次，和Account组织成员资格组合核验。"
+        },
+        "knowledge_base_creation_grant": {
+          "why": "保存知识库范围的显式创建能力，独立于普通成员身份，撤销需停止其来源。"
+        },
+        "admin_retirement": {
+          "why": "记录管理员退出前的职责检查与交接状态，避免清除最后负责人后留下不可管理的知识库。"
+        },
+        "document": {
+          "why": "保存文档控制头与当前结构/样式/manifest/正式版指针；正文历史存独立不可变版本。"
+        },
+        "structure_revision": {
+          "why": "不可变记录章节与协作单元布局的一个修订，main_manifest固定引用它而不是读实时目录。"
+        },
+        "style_revision": {
+          "why": "不可变记录样式版本，固定快照和导出可恢复原样式而不受后续修改影响。"
+        },
+        "chapter": {
+          "why": "保存文档章节实体身份，structure_entry描述它在某次结构修订的位置。"
+        },
+        "collaboration_unit": {
+          "why": "保存最小协作正文单元身份，内容版本与结构条目引用同一单元避免靠数组位置识别正文。"
+        },
+        "structure_entry": {
+          "why": "把一个structure_revision的章节/单元位置固定下来，不能用可变chapter表重建旧布局。"
+        },
+        "content_grant": {
+          "why": "保存文档内容协作权限与代次，和知识库/账号来源合成准入，撤销后旧编辑不能继续。"
+        },
+        "content_version": {
+          "why": "保存一个不可变canonical正文、摘要和来源，是manifest与正式版固定内容的基础。"
+        },
+        "main_manifest": {
+          "why": "把结构、样式和各单元内容选择封装为不可变快照，主线提交移动指针而不就地改正文。"
+        },
+        "manifest_entry": {
+          "why": "列出一个manifest对每个协作单元选择的content_version，固定整份快照内容集合。"
+        },
+        "branch": {
+          "why": "保存分支控制状态与当前固定快照指针，分支谱系另表记录以保留归并来源。"
+        },
+        "branch_lineage": {
+          "why": "保存分支从何处分叉或吸收的固定谱系，供后续合并判断共同来源。"
+        },
+        "unit_lineage": {
+          "why": "把单元内容版本的来源关系持久化，不能单靠当前文字相同判断合并历史。"
+        },
+        "review_request": {
+          "why": "保存评审请求的当前状态和轮次控制头；每一轮的固定输入保存在review_round。"
+        },
+        "review_round": {
+          "why": "固定一轮评审所审的快照与修订，后续草稿修改不能改写已审批对象。"
+        },
+        "request_submitter": {
+          "why": "记录某评审请求/轮次的提交者集合，支持身份与审计，不能由当前编辑者名单替代。"
+        },
+        "review_action": {
+          "why": "追加保存某轮评审审批动作与操作者，merge_record引用实际批准动作以证明提交依据。"
+        },
+        "change_request": {
+          "why": "记录评审要求修改的明确单元及状态，与评论讨论区分，驱动待修改流程。"
+        },
+        "unit_review_guard": {
+          "why": "按单元保存评审占用边界，阻止同一正文范围被不兼容的并行操作覆盖。"
+        },
+        "submission_operation": {
+          "why": "保存提交评审跨Doc/Node的原操作输入与阶段，捕获/安装未知可按原号恢复。"
+        },
+        "merge_operation": {
+          "why": "保存一次合并原请求的固定目标与结果状态，merge_attempt记录可重试执行而非重新发起业务。"
+        },
+        "merge_attempt": {
+          "why": "记录一轮合并尝试的捕获/计算/提交事实，隔离业务原号与worker重试代次。"
+        },
+        "merge_record": {
+          "why": "不可变保存真正主线归并事实与对应批准动作，支撑历史和逆操作，不能把草稿预览当提交记录。"
+        },
+        "main_commit_barrier": {
+          "why": "固定跨Doc主线切换和Node工作区安装的屏障，未知时保留原目标防双重推进。"
+        },
+        "release": {
+          "why": "保存对某个固定manifest的正式发布引用，公开读取不随当前草稿变化。"
+        },
+        "resource": {
+          "why": "保存上传对象身份、原归属、摘要/大小和生命周期，引用和计费分配分别建表。"
+        },
+        "resource_reference": {
+          "why": "把资源绑定到实际固定版本/正文依赖，清理对象前必须确认这些引用已释放。"
+        },
+        "resource_protection": {
+          "why": "记录写入候选对资源的临时保护，正文提交与对象清理竞争时不能删掉正在使用的资源。"
+        },
+        "document_invitation": {
+          "why": "保存文档协作邀请的固定目标、范围、令牌与期限，不能扩展成任意文档授权。"
+        },
+        "document_application": {
+          "why": "记录文档协作申请及审核事实，接受后才写content_grant。"
+        },
+        "quota_account": {
+          "why": "按空间保存上限、已用和预留字节，所有新增容量在同一行锁内核算。"
+        },
+        "quota_reservation": {
+          "why": "以原操作保存资源上传预留及提交/释放结果，网络重试不能重复扣费。"
+        },
+        "temporary_budget": {
+          "why": "独立记录实例临时资源预算，防尚未成为用户持久对象的上传占满磁盘。"
+        },
+        "comment_thread": {
+          "why": "把讨论串锚定到文档/固定内容位置并保存状态，评论正文由comment追加。"
+        },
+        "comment": {
+          "why": "保存讨论消息、作者及原操作身份；不承担正文版本修改或正式审批语义。"
+        },
+        "export_job": {
+          "why": "记录导出任务原请求和状态，固定依赖/临时制品细节由后续export_control扩展承接。"
+        },
+        "lifecycle_operation": {
+          "why": "固定删除、恢复、保留或清理等文档生命周期操作的原目标和阶段。"
+        },
+        "read_view": {
+          "why": "固定一次阅读所需manifest及依赖，分页/资源访问仍锚定同一内容版本。"
+        },
+        "document_admission": {
+          "why": "保存Doc已验证的文档能力证明，组合Account身份与Doc权限来源并限制期限。"
+        },
+        "collaboration_ticket": {
+          "why": "一次性连接协作入口的票据，绑定真实准入和目标；不能把长会话秘密交给Node。"
+        },
+        "delivery_session": {
+          "why": "保存具体受控输出/投递的身份与来源绑定，撤权需等待它停止或被排空。"
+        },
+        "output_instance": {
+          "why": "登记实际运行的输出处理实例及存活边界，使关闭器可以定位并确认没有残留待发字节。"
+        },
+        "room": {
+          "why": "Node协作房间的权威工作区代次、当前日志水位和状态；授权来源另表维护。"
+        },
+        "update_log": {
+          "why": "按房间序号追加协作更新字节；ACK必须在持久写入后，重建房间不能只依赖内存。"
+        },
+        "checkpoint": {
+          "why": "保存房间在确定日志水位的固定状态及摘要，配合后续update_log恢复。"
+        },
+        "collaboration_grant": {
+          "why": "保存Node实际使用的协作准入，绑定Actor、目标、期限与来源；不是Account用户库副本。"
+        },
+        "grant_source": {
+          "why": "把Node grant关联到具体scope/epoch，来源关闭可查到并阻断全部依赖准入。"
+        },
+        "flush_receipt": {
+          "why": "固定一次刷盘请求已保存到哪个序号及摘要，调用方不能以连接断开推断保存结果。"
+        },
+        "capture_operation": {
+          "why": "保存原捕获请求、房间/水位和固定输出，响应丢失时重取相同捕获而非当前正文。"
+        },
+        "main_barrier": {
+          "why": "Node侧固定主线变更/工作区安装屏障，阻止旧workspace上的更新越过新主线。"
+        },
+        "install_receipt": {
+          "why": "不可变保存已安装原快照的确认，Doc据原绑定恢复未知安装。"
+        },
+        "consumed_event": {
+          "why": "按consumer和event去重，记录事件消费处理状态；实际原消息与权威应用细节由event_origin扩展。"
+        },
+        "document_index_revision": {
+          "why": "保存文档在搜索投影中的序号/可见性水位，旧事件不得复活已隐藏内容。"
+        },
+        "rebuild_job": {
+          "why": "记录搜索重建原操作的生命周期，绑定与分页恢复通过rebuild_binding/progress扩展。"
+        },
+        "index_generation": {
+          "why": "记录查询alias当前物理索引及代次，重建验证后才切换指针。"
+        },
+        "cursor_registry": {
+          "why": "把搜索分页游标绑定到原索引代次和有效期，索引切换时仍能识别旧分页范围。"
+        }
+      },
+      "source_sha256": "9c9ea8ea0a1ef726f4fa205af99402ce6a88ee25a7d3049842eb8187eaac6d8d"
+    },
+    "db/migrations/002.up.sql": {
+      "purpose": "给任务与来源恢复就绪检查添加覆盖索引。",
+      "why": "就绪探测每秒执行时不能加载大payload的聚簇页；新增索引改善访问路径而不改变业务事实。",
+      "flow": [
+        "四库durable_task加task_pending(state,kind)。",
+        "Document加task_kind_due便于按种类选到期候选；三库gate_recovery与auth_recovery覆盖关闭证明联查。"
+      ],
+      "pitfalls": [
+        "索引只加速候选筛选，任务领取仍需主键当前读锁与原payload核验；不得以索引结果代替事务资格。"
+      ],
+      "symbols": {},
+      "source_sha256": "c1281e2ff585f0763e110b540f5246d2c9fd9eadc294883ce7d0a26ed5288a86"
+    },
+    "db/migrations/003.up.sql": {
+      "purpose": "补齐Search的原消息身份、每物理索引应用记录和SQL消费游标。",
+      "why": "Kafka、ES和SQL无法共用一次事务，必须分别保留可重验事实以恢复部分成功。",
+      "flow": [
+        "event_origin绑定原Kafka位置与原行摘要；index_application以physical_index+document_id区分活跃与重建目标。",
+        "consumer_checkpoint记录整条消息所有行成功后的next_offset，实际Kafka commit随后独立执行。"
+      ],
+      "pitfalls": [
+        "ES写成功但SQL未知必须重查原输入；不能只按document_id覆盖两个物理代次，也不能提前推进offset。"
+      ],
+      "symbols": {
+        "event_origin": {
+          "why": "保存原Kafka消息字节/位置，并另记后来Doc权威结果，防重试把不同事件混为一条。"
+        },
+        "index_application": {
+          "why": "以physical_index+document_id记录每物理索引应用的权威序号/摘要，活跃与重建索引互不覆盖。"
+        },
+        "consumer_checkpoint": {
+          "why": "保存SQL已处理完整Kafka记录后的next_offset，Kafka commit仍是随后独立动作。"
+        }
+      },
+      "source_sha256": "b126962072d04635354dd7b756866a439afd5a4607ebfec8bd0422a4a627631e"
+    },
+    "db/migrations/004.up.sql": {
+      "purpose": "持久固定Doc搜索快照与Search重建原输入及分页进度。",
+      "why": "重建必须沿最初源/目标代次、L位置和签名制品恢复，不能用两台机器时间戳证明顺序。",
+      "flow": [
+        "Doc的search_snapshot_job保存prepare与seal，search_snapshot_entry只引用快照任务，避免业务文档变化改写封存集合。",
+        "Search的rebuild_binding保存签名原件/摘要/目标，ACCEPTED必须同时有request_fingerprint及job_id。",
+        "rebuild_progress保存快照/验证游标和worker租约，消费next_offset仍只有consumer_checkpoint一份。"
+      ],
+      "pitfalls": [
+        "不得重签生成新内容地址替代原输入；不得双写第二套Kafka next游标。"
+      ],
+      "symbols": {
+        "search_snapshot_job": {
+          "why": "Doc接受原prepare并保存封存原件，WRITING到SEALED时必须同时有条目数/摘要/seal。"
+        },
+        "search_snapshot_entry": {
+          "why": "只引用快照任务的不可变元数据行，不引用后来可删的document行，保持封存视图。"
+        },
+        "rebuild_binding": {
+          "why": "Search固定原源/目标索引代次和签名制品，目标索引唯一，ACCEPTED唯一绑定实际job。"
+        },
+        "rebuild_progress": {
+          "why": "记录重建快照和验证游标及worker租约，不另存第二份消费next_offset。"
+        }
+      },
+      "source_sha256": "7425eb1ed7ce962ce6a362e9646062949164c6c9a5d0151dfebce4c41d49a874"
+    },
+    "db/migrations/005.up.sql": {
+      "purpose": "把Search消费者永久绑定到首次观察的Kafka物理日志身份。",
+      "why": "同名topic可以被删除重建，旧offset在新日志中不再表示原消息。",
+      "flow": [
+        "consumer_log_identity以consumer_name为主键，保存cluster_id和16字节topic_id。",
+        "revision固定1，运行时应用只允许首次追加与查询，不更新/删除后重新绑定。"
+      ],
+      "pitfalls": [
+        "不能仅比较topic名字；物理日志变化应拒绝接管旧checkpoint。"
+      ],
+      "symbols": {
+        "consumer_log_identity": {
+          "why": "永久绑定消费者首次使用的cluster/topic UUID，拒绝同名重建topic接管旧offset。"
+        }
+      },
+      "source_sha256": "368ba73e6746ca5c840d58035a10a5a34c5443ce071652dea62c8dfd6d8d1ecf"
+    },
+    "db/migrations/006.up.sql": {
+      "purpose": "为Collaboration持久任务生成可索引的所属文档字段。",
+      "why": "清理固定副本不能在3秒预算内反复全表解码巨大JSON；数据库派生列和payload同事务维护。",
+      "flow": [
+        "cleanup_document按binding.context、context、query.context或document_id路径COALESCE提取。",
+        "task_document(cleanup_document,kind,id)让清理按文档与任务种类定位。"
+      ],
+      "pitfalls": [
+        "不可用应用层异步反向索引替代派生列，遗漏窗口会让注销残留正文。"
+      ],
+      "symbols": {},
+      "source_sha256": "c421fef5a214fb588c1cdff2fd305c9f7e371e8e59c07b504893c2bd2f9fdeeb"
+    },
+    "db/migrations/007.up.sql": {
+      "purpose": "为Document清理任务增加文档归属派生列与原操作索引。",
+      "why": "Doc任务有多种固定上下文形状，清理必须定位原文档后沿原operation_id找到子输入。",
+      "flow": [
+        "cleanup_document覆盖capture/fixed/main/Context/binding等实际payload路径。",
+        "task_document定位文档，task_operation(operation_id,kind,id)定位同一原操作的恢复输入。"
+      ],
+      "pitfalls": [
+        "新增payload形状若未更新定位约定可能漏清理；不能用延长超时掩盖宽JSON扫描。"
+      ],
+      "symbols": {},
+      "source_sha256": "9af4126816f6fa09bf11048a98347c59ffd69a0ece0d2c25824532b9680517b2"
+    },
+    "db/migrations/008.up.sql": {
+      "purpose": "保存导出固定计划、临时制品校验信息以及独立临时磁盘预算。",
+      "why": "导出是派生制品，不应重复计入用户资源额度；取消与过期仍需知道实际文件及预留量。",
+      "flow": [
+        "export_control按job_id绑定fingerprint/snapshot及artifact_key/size/checksum/expiry。",
+        "export_budget只允许id=1单行，锁住它原子核对used与reserved；原迁移硬上限为256MiB。"
+      ],
+      "pitfalls": [
+        "文件存在不代表导出成功，必须核对原任务、大小和摘要；012追加扩大硬上限，不能回改008。"
+      ],
+      "symbols": {
+        "export_control": {
+          "why": "补充export_job的请求指纹、固定依赖、制品摘要和期限，未知转换可按原任务检验实际文件。"
+        },
+        "export_budget": {
+          "why": "单行记录导出临时磁盘reserved与used，所有worker竞争同一锁，不与用户quota混算。"
+        }
+      },
+      "source_sha256": "07f5216b09b0af15fb7265a5f2d0bb4c17a993d413526531cd5bd0c1c4aa0190"
+    },
+    "db/migrations/009.up.sql": {
+      "purpose": "创建Account权威的平台留存治理资格表。",
+      "why": "组织ADMIN只管理所属组织，不能自动得到平台留存治理权限。",
+      "flow": [
+        "platform_governance_grant以user_id唯一记录state、epoch、revision和changed_operation_id。",
+        "状态限制ACTIVE/REVOKING/CLOSED，撤销暂停资格并等待原来源屏障，重新授予使用更高epoch。"
+      ],
+      "pitfalls": [
+        "不得将此表复制进Doc或让Doc私自授予；普通注册默认没有此资格。"
+      ],
+      "symbols": {
+        "platform_governance_grant": {
+          "why": "Account唯一平台治理任免事实，独立epoch保证撤权后旧治理准入失效。"
+        }
+      },
+      "source_sha256": "13a933e1903f730c01937d1d727b059ab02b212c8d57a9667ddf9c0acee715f2"
+    },
+    "db/migrations/010.up.sql": {
+      "purpose": "增加个人文档转让、资源空间计费分配与正文容量账。",
+      "why": "资源原归属保持不变，转让改变的是明确文档的使用资格与计费空间；历史正文必须补真实容量。",
+      "flow": [
+        "personal_transfer固定双方、原文档控制修订及offer/accept原号。",
+        "resource_space_allocation按资源/空间记一次占用，document_resource_allocation固定转让后具体文档资格。",
+        "document_capacity回填非PURGED文档content_version字节，并增加quota_account.used_bytes。"
+      ],
+      "pitfalls": [
+        "补账即便超额也记录真实值，不提高limit；运行时允许查看/释放，拒绝新增。"
+      ],
+      "symbols": {
+        "personal_transfer": {
+          "why": "固定文档转让双方、控制修订、offer/accept原号和计划，接受未知可恢复同一目标。"
+        },
+        "resource_space_allocation": {
+          "why": "按资源与空间记一次容量占用，资源原归属不因转让改写。"
+        },
+        "document_resource_allocation": {
+          "why": "把转让后的资源使用资格限定到精确文档/空间，不能让接收空间任意复用资源。"
+        },
+        "document_capacity": {
+          "why": "按文档记录canonical正文和Node副本计量，转让/清理时能移动或释放真实容量。"
+        }
+      },
+      "source_sha256": "32f6515202eac5b7337e988c3dce665023f0c69c68afec5161902fcdda3d85ca"
+    },
+    "db/migrations/011.up.sql": {
+      "purpose": "分开记录协作草稿正文预留与固定阅读派生副本容量。",
+      "why": "写入前预留需要绑定room/workspace/hash；阅读快照不是新的用户业务正文，不能重复收费。",
+      "flow": [
+        "draft_body_reservation以原操作号保存body_hash/body_bytes、净预留和状态，draft_body_capacity按room+workspace统计。",
+        "reading_body_capacity只选有READ_VIEW引用且无业务manifest引用的版本，再从document_capacity与quota_account扣回对应费用。"
+      ],
+      "pitfalls": [
+        "不能仅见READ_VIEW就减账：同版本若仍被业务manifest引用就仍计业务容量。",
+        "这次只纠正账目，不删除固定正文和阅读历史。"
+      ],
+      "symbols": {
+        "draft_body_capacity": {
+          "why": "按room+workspace_epoch保存已确认草稿容量，旧工作区释放不影响新代次。"
+        },
+        "draft_body_reservation": {
+          "why": "按原操作预留候选正文净增长，绑定body_hash和字节，只有对应保存ACK后提交计量。"
+        },
+        "reading_body_capacity": {
+          "why": "独立记录仅READ_VIEW引用的派生正文容量，避免与业务版本重复收费并保留实际运行占用。"
+        }
+      },
+      "source_sha256": "33440233b685c340cb046abf388017598c6f4a9781cfe24a58589c54b8909c51"
+    },
+    "db/migrations/012.up.sql": {
+      "purpose": "把导出预算硬上限扩展到最多8个worker对应2GiB。",
+      "why": "可配置工作池需要总预算随并发变化，实际准入仍受单行锁和256MiB乘worker数限制。",
+      "flow": [
+        "ALTER export_budget删除008第二个CHECK，再添加reserved_bytes/used_bytes各不超过2147483648。"
+      ],
+      "pitfalls": [
+        "数据库硬上限不是默认可用额度；业务仍按实际workers核算，不得一律放行2GiB。"
+      ],
+      "symbols": {},
+      "source_sha256": "2f1a07cb43568f8b89ec9e16ef849dce98ef86d544a2a7e11851e3fc61f08442"
+    },
+    "db/migrations/service-grants.sql": {
+      "purpose": "给四个应用账号分配各自私有表的最小读写权限。",
+      "why": "迁移/root账号只负责部署，运行服务不能拥有跨库任意查询或修改固定事实的权限。",
+      "flow": [
+        "每个collab_*账号只获得自己数据库表权限；schema_migration只读。",
+        "verification_consumption/admission_source及固定版本表不授通用UPDATE；audit_event/outbox只追加读取。",
+        "新增重建制品/物理日志身份表仍保留只追加或受限更新能力。",
+        "document_sharing_archive仅SELECT、INSERT；不能修改或删除原归档事实。"
+      ],
+      "pitfalls": [
+        "密码由部署秘密单独创建，不能写进本文件；不能为了测试方便授予全部库的ALL。"
+      ],
+      "symbols": {},
+      "source_sha256": "1ad7530accb664253ed0b8dcee9ee88cb2c80ae468169eee37ad5a98a4889a4a"
+    },
+    "db/migrations/001.empty-only.down.sql": {
+      "purpose": "为仅空的新安装库提供防误用回滚保护。",
+      "why": "DROP DATABASE不可恢复，必须先证明四库所有业务表为空才允许执行清除。",
+      "flow": [
+        "assert_v001_empty逐表检查业务行，发现任何一行就SIGNAL拒绝。",
+        "全部为空才CALL成功、移除过程并DROP四库。"
+      ],
+      "pitfalls": [
+        "不得在含用户数据或已追加迁移的实例运行；该脚本不是通用生产降级方案。"
+      ],
+      "symbols": {},
+      "source_sha256": "84b89d6d6bbf244c3fe0e2883a27ebc4fc579fa3e9a7d7f4f1ed1517f18152b3"
+    },
+    "packages/platform/store.go": {
+      "purpose": "加载服务自身配置，创建有界数据库池，并以迁移和恢复事实判定就绪。",
+      "why": "Ping只证明连接可用，不能证明版本正确或旧任务安全接管；应用只持本服务DSN。",
+      "flow": [
+        "OpenStore创建实例拥有的sql.DB并包装sqlx，最大/空闲连接均8，2秒Ping失败即关闭。",
+        "CheckReady精确比较schema_migration版本及SHA，再拒绝未接管非终态任务与未完成gate。",
+        "ManagedTasks仅在ReadyExtra能核恢复事实时排除基础拒绝，最后仍执行ReadyExtra。"
+      ],
+      "pitfalls": [
+        "不能复用全局同DSN池导致旧实例关闭新实例；不能把ManagedTasks登记当作免检清单。"
+      ],
+      "symbols": {
+        "Config": {
+          "fields": {
+            "Role": "当前服务角色account/document/search/collaboration，Main核对与入口一致。",
+            "Host": "本机监听地址，配合HTTPPort/RPCPort生成服务地址。",
+            "HTTPPort": "HTTPS业务与健康检查端口。",
+            "RPCPort": "mTLS gRPC监听端口。",
+            "DSN": "当前服务私有数据库连接串，含实例凭据，不得输出。",
+            "CertFile": "本服务TLS证书文件路径，叶证书含精确服务URI。",
+            "KeyFile": "与CertFile配对的私钥路径，只由进程加载。",
+            "CAFile": "验证内部服务证书的CA文件路径。",
+            "ExpectedSQLSHA": "001基线原字节的SHA256十六进制值，CheckReady核对数据库记录。",
+            "ExpectedAdditionalMigrations": "版本号到追加迁移SHA的可信发布映射，要求连续且无缺项。",
+            "Origin": "允许浏览器写入的精确Origin，用于防跨站。",
+            "Root": "项目或实例装配根目录，构造运行文件位置，不作为用户输入路径。",
+            "Peers": "服务角色到RPC/内部HTTP地址的映射，例如document与documentHttp。",
+            "Redis": "Account登录限流与验证码存储配置；为空时认证子功能未装配。",
+            "SMTP": "验证码邮件通道配置；不是密码原文容器。",
+            "ChallengeKey": "32字节挑战HMAC密钥的hex配置，亦派生邀请加密键。",
+            "Search": "Search所需Kafka/ES、索引及游标签名设置。",
+            "Resources": "Document资源对象存储和额度配置。",
+            "Exports": "Document导出工作目录、转换器路径与worker数。"
+          }
+        },
+        "ExportConfig": {
+          "fields": {
+            "Root": "导出临时/最终制品受控根目录。",
+            "Pandoc": "显式配置的Pandoc可执行文件路径。",
+            "Node": "导出渲染过程使用的Node可执行文件。",
+            "Browser": "导出PDF等渲染过程的浏览器可执行文件。",
+            "Workers": "导出并发工作数，0沿用单worker；实际预算按256MiB乘worker校验。"
+          }
+        },
+        "ResourceConfig": {
+          "fields": {
+            "Root": "本机对象、锁和校验临时文件的受控根目录，启用OSS后仍需它。",
+            "OSS": "可选OSS对象IO配置，未配置时走本地对象存储。",
+            "SpaceBytes": "每个空间可用的资源/业务正文容量上限字节。",
+            "UploadBytes": "单次资源上传允许的最大字节数。",
+            "TemporaryBytes": "并发上传临时文件与预留总预算。",
+            "UploadTTLSeconds": "上传预留的有效秒数，到期需按任务回收而非继续写入。"
+          }
+        },
+        "ResourceOSSConfig": {
+          "fields": {
+            "Region": "对象存储Bucket所在区域，用于请求签名与端点配置。",
+            "Endpoint": "OSS服务端点，供受控对象客户端连接。",
+            "Bucket": "本实例使用的对象桶名称。",
+            "Prefix": "本实例对象键前缀，隔离不同部署的对象。",
+            "CredentialsFile": "本地私密AK/SK文件路径，配置本身不携带明文AK/SK。"
+          }
+        },
+        "SearchConfig": {
+          "fields": {
+            "Owner": "本部署搜索制品和物理索引的归属标识。",
+            "Brokers": "Kafka broker地址列表。",
+            "ElasticEndpoint": "Elasticsearch HTTP服务地址。",
+            "Topic": "搜索事件Kafka主题名；运行时还需固定topic物理ID。",
+            "Group": "Kafka消费组身份，决定消费位置归属。",
+            "Alias": "对外查询别名，由重建切换到物理索引。",
+            "InitialIndex": "首次初始化使用的物理索引名，不可与alias混用。",
+            "CursorKey": "搜索游标HMAC签名密钥配置。",
+            "CursorTTLSeconds": "搜索游标可恢复的有效秒数。"
+          }
+        },
+        "SMTPConfig": {
+          "fields": {
+            "Address": "SMTP host:port，不是HTTP URL。",
+            "From": "完整且无头注入字符的发件邮箱。",
+            "Security": "development/tls/starttls模式；development仅回环数值IP且不发凭据。",
+            "CredentialsFile": "远程SMTP用户名/授权码的本机绝对JSON路径。",
+            "CAFile": "可选额外SMTP信任CA，不复用业务mTLS身份且不关闭系统校验。"
+          }
+        },
+        "RedisConfig": {
+          "fields": {
+            "Host": "Redis host:port，供验证码与登录Lua执行。",
+            "User": "Redis ACL用户。",
+            "Password": "Redis实例凭据，仅进程使用，禁止日志或教程复制。"
+          }
+        },
+        "Store": {
+          "fields": {
+            "Context": "服务生命周期context，退出时取消所有恢复worker。",
+            "ReadyExtra": "业务组合层的恢复一致性屏障；nil时不得登记ManagedTasks豁免。",
+            "ManagedTasks": "本实例已实际装配并由ReadyExtra验证的持久任务种类。",
+            "Role": "当前服务角色，决定是否存在gate及特定就绪检查。",
+            "Conn": "包装同DB池的go-zero SQL接口；不能另开不相关池。",
+            "DB": "实例拥有的最多8连接sql.DB，所有本库事务由此开始。",
+            "ExpectedSQLSHA": "可信001基线摘要副本。",
+            "ExpectedAdditionalMigrations": "复制的追加迁移期望集合，防配置map被后续修改。"
+          }
+        }
+      },
+      "source_sha256": "a6970e02d5fdc562a04c0fafd4222823559911e572b60db5b805fa9b0dff0942"
+    },
+    "packages/platform/schema_readiness.go": {
+      "purpose": "校验已安装迁移集合与发布配置中的连续版本和摘要完全相等。",
+      "why": "数据库不能通过自报一个新摘要让服务接受未知结构，可信期望必须来自发布配置。",
+      "flow": [
+        "matchesSchemaMigrations先比较总数，再逐版本1到N取期望SHA；要求32字节hex且与actual完全相同。"
+      ],
+      "pitfalls": [
+        "缺迁移、跳号、未知额外版本或摘要不符都false；不能只检查最新version。"
+      ],
+      "symbols": {},
+      "source_sha256": "cdda880353e658f756305a9f64d53bb5613abb6523d3b1c1e9ba03cda0a3aaf9"
+    },
+    "packages/platform/store_diagnostics.go": {
+      "purpose": "按显式开关输出连接池聚合诊断，帮助定位Windows连接耗尽。",
+      "why": "观测复用Store.DB.Stats，不创建另一池或暴露SQL/DSN/用户载荷。",
+      "flow": [
+        "仅COLLAB_SQL_POOL_DIAGNOSTICS=1启动goroutine；每10秒记录open/in_use/idle/wait及关闭计数。",
+        "context取消后停止ticker并退出。"
+      ],
+      "pitfalls": [
+        "诊断不能改连接上限、期限或记录私密连接串，未开开关不启动采样。"
+      ],
+      "symbols": {},
+      "source_sha256": "495783c3ba92e7cbed911c23751a0072046cdf9f931c1b9c63ac0420c25613c0"
+    },
+    "packages/platform/security.go": {
+      "purpose": "验证RPC调用服务身份和方法白名单，并输出安全HTTP错误。",
+      "why": "mTLS说明谁在调用，rpc-policy说明能调用什么；缺一项都会把内部接口变成无边界入口。",
+      "flow": [
+        "AuthorizeRPC要求证书VerifiedChains与唯一SPIFFE角色，再要求0至5秒有限deadline。",
+        "RPCInterceptor通过后才执行handler；WriteSafeError只映射取消/超时与稳定503码。",
+        "WriteJSON统一no-store、nosniff和JSON Content-Type。"
+      ],
+      "pitfalls": [
+        "不能用浏览器头或证书CN自报服务角色；驱动原错误可能含SQL/凭据，禁止原文输出。"
+      ],
+      "symbols": {
+        "ErrorResponse": {
+          "fields": {
+            "Code": "可对外稳定错误码，如DEPENDENCY_TIMEOUT，绝非驱动原文。",
+            "Message": "安全的人类可读提示，不含SQL/路径/凭据。",
+            "TraceID": "随机追踪号用于关联请求；不授予查询权限。",
+            "RetryAction": "客户端下一步策略，如RETRY_SAME_OPERATION或RELOGIN。"
+          }
+        },
+        "AuthorizeRPC": {
+          "params": {
+            "method": "grpc完整方法路径，用作内嵌rpc-policy.json的allowlist键。"
+          }
+        }
+      },
+      "source_sha256": "36de4ad113898e0e1d38a7e77cd7c9ec817f5f86a3f6c1acf57cb6bcac5958aa"
+    },
+    "packages/platform/service.go": {
+      "purpose": "统一启动HTTPS、mTLS RPC、健康探测和优雅生命周期。",
+      "why": "业务注册只拿本服务Store；Account/Document输出需同步可控，框架额外goroutine缓冲不能冒充已经排空。",
+      "flow": [
+        "Run打开Store、建立退出context、配置TLS1.3和RPC拦截器，装配业务后再Serve。",
+        "RESTConfig关闭开发pprof和原始日志；Account/Doc普通API3秒、精确资源PUT上传30秒，并设读写deadline。",
+        "ready通过CheckReady返回，live仅说明进程活着；退出停止RPC/HTTP并关闭池。"
+      ],
+      "pitfalls": [
+        "live=200不代表已恢复可服务；上传长预算只适用于严格匹配的PUT路径，不应扩展普通业务。"
+      ],
+      "symbols": {
+        "healthServer": {
+          "fields": {
+            "store": "当前服务Store，Check调用它的恢复/版本就绪屏障。",
+            "healthpb.UnimplementedHealthServer": "嵌入gRPC健康服务默认实现，未覆写方法保持框架约定。"
+          }
+        },
+        "healthServer.Check": {
+          "params": {
+            "_": "健康请求对象未使用；本实现统一检查整个当前服务Store。"
+          }
+        }
+      },
+      "source_sha256": "bfd3b42538d72130283337664bd64bff766b7b31be8cd63b11e25c945c491cad"
+    },
+    "packages/platform/operation_receipt.go": {
+      "purpose": "在持久回执写入前验证原操作号、状态并得到确定JSON字节。",
+      "why": "任意业务map若原号错误或包含不可编码值，不能先提交业务再发现回执坏了。",
+      "flow": [
+        "EncodeOperationReceipt要求value.operation_id与operation相等，state仅允许四种状态。",
+        "json.Marshal沿既有map编码得到固定JSON，返回State与JSON供同事务写入。"
+      ],
+      "pitfalls": [
+        "不能改成另一种字段排序或补写未授权DTO字段，固定回执摘要可能依赖旧字节。"
+      ],
+      "symbols": {
+        "EncodedOperationReceipt": {
+          "fields": {
+            "State": "已校验的业务状态，可直接写operation_receipt.state。",
+            "JSON": "同一次校验后产生的确定JSON字节，与业务同事务持久化。"
+          }
+        }
+      },
+      "source_sha256": "75352799ca548af428c7d54b5bebf17123678e6c7d697176748985c3a88dcf4d"
+    },
+    "packages/platform/fence.go": {
+      "purpose": "定义来源关闭范围、目标摘要、参与者ACK比对和空底座的Fence实现。",
+      "why": "确认必须绑定原撤销号、scope、旧epoch、协议generation和参与者角色，避免拿别的关闭回执替代。",
+      "flow": [
+        "ValidFence区分Account来源和doc/kb/publication来源；BootstrapDigest把所有绑定及role纳入SHA256。",
+        "MatchesBootstrapAck要求ACKNOWLEDGED、同范围、同generation、正确摘要且无MissingInstances。",
+        "PrepareBootstrapFence仅在admission/delivery/output全空时可采用底座路径，Finish保存真实collaboration ACK。"
+      ],
+      "pitfalls": [
+        "已有业务输出必须用真实排空器，不能空ACK。",
+        "协议generation固定1，不等于worker租约代次。"
+      ],
+      "symbols": {
+        "bootstrapBinding": {
+          "fields": {
+            "Digest": "原FenceRequest.TargetDigest的hex，重试必须一致。",
+            "Generation": "原协议generation的十进制字符串，当前固定为1。"
+          }
+        }
+      },
+      "source_sha256": "7d433e497d0b1ade8fa6a54f765fbda88eb26348c1dd310e4ddd2ce0dda0fc9d"
+    },
+    "packages/platform/account_closure.go": {
+      "purpose": "定义Account与Document之间的固定注销绑定和有界清理分页协议。",
+      "why": "用户只请求注销自己，实际关闭组织集合来自Account锁内事实，恢复不能替换或扩大范围。",
+      "flow": [
+        "ValidateAccountClosureBinding要求非nil且严格升序组织集合；Equal逐字段比较。",
+        "AccountClosurePage.Matches校验32字节摘要、原binding、最多100项、递增文档号和NextAfter。",
+        "Confirmed仅证明来源ACK齐全，PLANNED仅证明Doc计划固定；都不等同整个注销完成。"
+      ],
+      "pitfalls": [
+        "非末页必须恰好100项，不能接受截断集合；继续页必须携带原PlanDigest。"
+      ],
+      "symbols": {
+        "AccountClosureBinding": {
+          "fields": {
+            "Operation": "Account最初登记的注销操作号。",
+            "User": "注销账号ID，由Account真实会话确定。",
+            "IdentityEpoch": "冻结前的旧身份代次，定义要关闭的identity范围。",
+            "ClosingOrganizations": "锁内固定、严格升序、非nil的独自存续组织ID集合；空数组表示确认无需关闭组织。"
+          }
+        },
+        "AccountClosureDecision": {
+          "fields": {
+            "Rejected": "true仅表示Account已经持久拒绝同一原计划，供Doc释放对应预留。"
+          }
+        },
+        "AccountClosureConfirmation": {
+          "fields": {
+            "Confirmed": "true说明原Account计划已冻结且全部来源ACK落库，不代表Doc清理结束。"
+          }
+        },
+        "AccountClosureRetention": {
+          "fields": {
+            "State": "Doc固定保留规划阶段，例如PLANNED；不能当账号全局终态。"
+          }
+        },
+        "AccountClosurePreparation": {
+          "fields": {
+            "State": "Doc对同一binding的准备结果，例如FROZEN或待交接状态。",
+            "RequiredKnowledgeBases": "注销前尚需移交职责的知识库ID集合。",
+            "ReservedKnowledgeBases": "Doc已为原注销计划预留的知识库集合，须与Account复核计划一致。"
+          }
+        },
+        "AccountClosurePageRequest": {
+          "fields": {
+            "AfterDocument": "上一篇已收到PAYLOADS_REMOVED确认的文档ID，初页为空。",
+            "PlanDigest": "Doc不可变保留计划SHA256 hex，继续页不可为空或更换。",
+            "AccountClosureBinding": "内嵌原AccountClosureBinding，携带操作/用户/旧身份及固定组织集合。"
+          }
+        },
+        "AccountClosureDocument": {
+          "fields": {
+            "Document": "固定计划中的文档规范十进制ID。",
+            "Release": "应保留正式版ID字符串，0表示无正式版引用。"
+          }
+        },
+        "AccountClosurePage": {
+          "fields": {
+            "Binding": "响应所属原注销计划，必须与请求逐字段相等。",
+            "State": "Doc计划的PLANNED/CLEANING/SUCCEEDED状态。",
+            "PlanDigest": "固定计划摘要，不能随分页改变。",
+            "Documents": "最多100项按文档ID递增的固定依赖，不包含正文。",
+            "NextAfter": "本页最后文档ID；空页保持请求AfterDocument。",
+            "Done": "true表示固定集合已到尾页，不单独证明每篇清理已完成。"
+          }
+        }
+      },
+      "source_sha256": "1d24959fc0efd457ce3a8aff467eeb7af804b77322c4063852ba6366a0e65996"
+    },
+    "packages/platform/authority_rpc_protocol.go": {
+      "purpose": "集中定义跨服务清理、通知资格、草稿计量、组织关闭和转让存储测量协议。",
+      "why": "这些协议只传固定编号、摘要和资格来源，不能复制正文或替代冻结protobuf授权契约。",
+      "flow": [
+        "AccountDocumentCleanupContext把原操作、文档、doc-acl旧epoch和revocation纳入域隔离摘要。",
+        "通知快照携带全部source及期限；组织关闭分页同时校验固定binding/摘要/游标。",
+        "PersonalTransferStorageMeasurement返回固定原号/代次/实际字节摘要及SourceClosed，Doc据此计费。"
+      ],
+      "pitfalls": [
+        "JS边界的64位ID和字节数用规范字符串；CLEANED只代表Node该文档私有工作区清理，不是账号全局成功。"
+      ],
+      "symbols": {
+        "AccountDocumentCleanupRequest": {
+          "fields": {
+            "Operation": "原账号或组织清理所属操作号。",
+            "Document": "待清Node私有工作区的规范文档ID字符串。"
+          }
+        },
+        "AccountDocumentCleanupContext": {
+          "fields": {
+            "Scope": "固定为doc-acl:文档ID的来源关闭键。",
+            "Epoch": "被关闭的旧doc-acl代次，规范十进制字符串。",
+            "Revocation": "执行该文档来源屏障的原撤销操作号。",
+            "Digest": "对操作/文档/scope/epoch/revocation作域隔离SHA256后的hex。",
+            "AccountDocumentCleanupRequest": "继承原操作号与精确文档ID。"
+          }
+        },
+        "AccountDocumentCleanupReceipt": {
+          "fields": {
+            "State": "CLEANED表示Node已持久清除此文档私有工作区，并非全账号注销终态。",
+            "AccountDocumentCleanupContext": "原清理上下文完整绑定，返回必须精确匹配。"
+          }
+        },
+        "AccountNotificationEvent": {
+          "fields": {
+            "ID": "Account.notification主键，ACK按此原事件定位。",
+            "RecipientID": "所有者转移成功后的目标用户ID。",
+            "OrganizationID": "发生所有者转移的组织ID。",
+            "EventID": "account-owner:加原操作SHA256的稳定去重身份。",
+            "Kind": "当前受支持ORG_OWNER_TRANSFER，决定Doc投递语义。"
+          }
+        },
+        "AccountNotificationEventsResponse": {
+          "fields": {
+            "Events": "尚未确认的Account事件批次，Doc成功投递后再ACK。"
+          }
+        },
+        "AccountNotificationAckRequest": {
+          "fields": {
+            "IDs": "原通知主键集合，长度1至100，必须非零且无重复。"
+          }
+        },
+        "AccountNotificationAckResponse": {
+          "fields": {
+            "Acknowledged": "true表示这一批ACK已由Account提交，网络未知仍可重试同批。"
+          }
+        },
+        "DraftBodyProtection": {
+          "fields": {
+            "Protection": "冻结protobuf保护请求的原protojson，保持原权限契约。",
+            "BodyBytes": "Node隔离候选canonical正文的规范字节数，不由浏览器自行计量。",
+            "BodyHash": "同一候选正文的SHA256，绑定预留与实际写入内容。"
+          }
+        },
+        "NotificationAdministratorsRequest": {
+          "fields": {
+            "OrganizationID": "要枚举当前管理候选的组织。",
+            "After": "上一页最后用户ID，首批0，使用严格大于游标查询。"
+          }
+        },
+        "NotificationAdministratorsResponse": {
+          "fields": {
+            "OrganizationID": "回显请求组织，调用方核对批次绑定。",
+            "UserIDs": "最多100个当前ACTIVE owner/ADMIN候选，投递前仍需Check。",
+            "NextAfter": "还有下一页时的最后用户ID；0表示无下一页。"
+          }
+        },
+        "NotificationRecipientsRequest": {
+          "fields": {
+            "OrganizationID": "非零时同时要求组织成员资格；0仅核账号资格。",
+            "UserIDs": "1至100个实际收件候选，Account按升序锁定并逐项返回。"
+          }
+        },
+        "NotificationRecipientSource": {
+          "fields": {
+            "ScopeKey": "identity/credential/org-member/org-admin/org-owner具体撤权来源键。",
+            "Epoch": "该来源快照时的旧代次，Doc提交投递前必须锁定并核验。"
+          }
+        },
+        "NotificationRecipient": {
+          "fields": {
+            "UserID": "本条候选收件账号。",
+            "Eligible": "当前锁内事实是否满足收件条件，false不产生授权来源。",
+            "IdentityEpoch": "账号identity撤权代次。",
+            "CredentialEpoch": "账号凭据撤权代次，改密会关闭它。",
+            "MemberEpoch": "该组织成员关系代次。",
+            "Role": "实际成员MEMBER或ADMIN，不能来自调用者自报。",
+            "OrgOwner": "是否等于组织owner_id。",
+            "Sources": "全部实际资格依赖，Doc须在有效期内整体锁定。"
+          }
+        },
+        "NotificationRecipientsResponse": {
+          "fields": {
+            "OrganizationID": "本批核验所属组织或0。",
+            "Recipients": "逐候选返回的资格和来源快照。",
+            "ExpiresUnixMS": "Account在释放事实锁前确定的5秒绝对期限，传输不得延长。"
+          }
+        },
+        "OrganizationClosureBinding": {
+          "fields": {
+            "Operation": "原独立组织关闭操作号。",
+            "Organization": "锁内确定的待关闭组织ID。",
+            "User": "唯一存续成员且为owner的发起者。",
+            "Revision": "准备时组织资料/控制修订，防目标变化。",
+            "MemberRevision": "准备时成员集合修订，防加入/离开变化。",
+            "Epoch": "发起者原org-member代次，关闭组织不等于关闭账号身份。"
+          }
+        },
+        "OrganizationClosureConfirmation": {
+          "fields": {
+            "Confirmed": "同一组织来源屏障已经取得实际Doc ACK的确认。"
+          }
+        },
+        "OrganizationClosureState": {
+          "fields": {
+            "State": "组织关闭控制步骤的持久状态，调用方须核期望值而不是只看HTTP200。"
+          }
+        },
+        "OrganizationClosurePageRequest": {
+          "fields": {
+            "Binding": "固定组织关闭范围，必须来自Account。",
+            "PlanDigest": "不可变文档清理计划摘要，续页必须沿用。",
+            "AfterDocument": "上一篇已确认清理完成的文档ID。"
+          }
+        },
+        "OrganizationClosurePage": {
+          "fields": {
+            "Binding": "响应绑定的原组织关闭计划。",
+            "State": "仅CLEANING或SUCCEEDED可进入页面匹配。",
+            "PlanDigest": "固定清理集合SHA256。",
+            "Documents": "递增且最多100个文档/正式版标识。",
+            "NextAfter": "精确等于本页最后文档或空页原游标。",
+            "Done": "是否最后一页；非末页必须满100条防截断。"
+          }
+        },
+        "PersonalTransferStorageClosure": {
+          "fields": {
+            "Revocation": "转让中实际已登记的来源关闭号。",
+            "Scope": "须已关闭的精确权限来源键。",
+            "Epoch": "该来源关闭的旧代次字符串。"
+          }
+        },
+        "PersonalTransferStorageRequest": {
+          "fields": {
+            "Operation": "原个人文档转让操作号。",
+            "Document": "转让的精确文档ID字符串。",
+            "Generation": "原转让协议代次，防混用另一轮测量。",
+            "Closures": "Node测量前必须确认关闭的全部固定来源。"
+          }
+        },
+        "PersonalTransferStorageMeasurement": {
+          "fields": {
+            "Operation": "回显原转让操作号。",
+            "Document": "本次计量所属原文档。",
+            "Generation": "回显原协议代次。",
+            "Bytes": "Node固定工作区实际存储字节的规范十进制字符串。",
+            "Digest": "这份固定测量快照摘要，防重试换计量内容。",
+            "SourceClosed": "实际固定来源是否已停止，false不能据此推进转让。"
+          }
+        }
+      },
+      "source_sha256": "4548186d17923f2071857315b26aa1e13a8644e0762071cfe8d3e6c03ad38e8a"
+    },
+    "packages/platform/peer_clients_protocol.go": {
+      "purpose": "创建验证目标角色的内部RPC/HTTP客户端，并核验HTTP调用方证书。",
+      "why": "所有本机服务可能同用localhost证书主机名，仍必须检查SPIFFE URI防止角色互相冒充。",
+      "flow": [
+        "DialPeer同时验证CA、localhost和目标role，localhost拨号改IPv4回环但不降低TLS验证。",
+        "HTTPPeer设置1.5秒总超时且拒绝重定向；HTTPCaller要求已验证证书链和精确角色URI。"
+      ],
+      "pitfalls": [
+        "不能信任自报Header角色，不能因IP直连关闭hostname验证；重定向不能把服务凭据转给另一目的地。"
+      ],
+      "symbols": {
+        "HTTPPeer": {
+          "params": {
+            "role": "期望对端精确角色，例如document，用于证书SPIFFE URI核验；不是调用方自报HTTP头。"
+          }
+        }
+      },
+      "source_sha256": "c59e3550f54bd1b446277d64947ba9e1cb36c16b7350a77f28f1342695c45529"
+    },
+    "packages/platform/rebuildmeta/binding.go": {
+      "purpose": "定义搜索重建原准备元数据和封存摘要，生成唯一规范字节。",
+      "why": "源代次、目标代次和三分区起点L一起固定，重试不能重新读取当前位置覆盖原输入。",
+      "flow": [
+        "Prepare.Bytes核验版本1、owner/物理索引名互异、非零topic UUID、随机nonce及target=source+1。",
+        "ParsePrepare/ParseSeal重新编码逐字节比较，拒绝重复键、重排、未知字段和非规范数字。",
+        "Seal通过PrepareRef内容地址绑定完整准备，不复制易漂移字段。"
+      ],
+      "pitfalls": [
+        "uint64/offset用字符串；offset不可超过MaxInt64，source/revision最大值拒绝，防递增溢出。"
+      ],
+      "symbols": {
+        "Prepare": {
+          "fields": {
+            "Version": "元数据格式版本，当前必须1。",
+            "Operation": "原搜索重建操作号。",
+            "Owner": "部署归属标识，限制制品与索引所属实例。",
+            "Alias": "将来原子切换的查询别名，不得等于物理索引名。",
+            "Source": "准备时当前活跃物理索引。",
+            "SourceGeneration": "源索引物理代次，正uint64字符串且可递增。",
+            "SourceRevision": "源索引控制修订，用于拒绝准备后并发切换。",
+            "Target": "本次独占的新物理索引，不能复用源或别名。",
+            "TargetGeneration": "严格等于SourceGeneration+1。",
+            "Cluster": "Kafka真实cluster ID，不能仅靠broker地址代替。",
+            "Topic": "事件主题名。",
+            "TopicID": "16字节非零Kafka主题UUID的hex，识别同名重建。",
+            "Starts": "按分区0/1/2排序的初始L offset，非负十进制字符串。",
+            "Nonce": "32字节随机nonce的hex，让原准备身份不可混用。"
+          }
+        },
+        "Seal": {
+          "fields": {
+            "Version": "封存格式版本，必须1。",
+            "PrepareRef": "原prepare envelope内容地址，隐含其完整owner/operation/代次/L。",
+            "Count": "全部规范NDJSON条目数的十进制字符串。",
+            "EntriesDigest": "完整entries.ndjson原字节SHA256 hex。"
+          }
+        }
+      },
+      "source_sha256": "29f8c1117c7d5e0c6b932823ebb6c6680336e34a810aa8ce5f89711442507980"
+    },
+    "packages/platform/rebuildmeta/entry.go": {
+      "purpose": "流式编码和校验Doc交给Search的重建元数据行。",
+      "why": "大快照只需保留一行内存；摘要与计数只有完整流验证后才可作为封存事实。",
+      "flow": [
+        "Entry.Line固定字段顺序与LF，ID/seq用字符串，无正式版用null。",
+        "Scan要求文档ID严格升序、行字节与Line完全相同，逐行visit并累积SHA256。"
+      ],
+      "pitfalls": [
+        "最后一行缺LF、重复/逆序ID或非法release都失败；visit写入的部分结果在整流成功前不能提交。"
+      ],
+      "symbols": {
+        "Entry": {
+          "fields": {
+            "Document": "快照文档ID，必须非零且全流递增。",
+            "Minimum": "该文档要求追到的最小索引事件序号。",
+            "Release": "正式版提示ID，0在NDJSON编码为null。"
+          }
+        }
+      },
+      "source_sha256": "f4ebe65cf1c76714d67b6d51443e16f94018fe0927eb7ac3acb2561a9349f373"
+    },
+    "packages/platform/rebuildmeta/descriptor.go": {
+      "purpose": "将重建制品引用与Kafka物理日志起点编码进冻结RPC watermark，并计算完整请求指纹。",
+      "why": "同名topic或只凭operation号不能证明原任务；watermark需携带cluster/topic UUID和3个原offset。",
+      "flow": [
+        "DescriptorFor从Prepare复制日志身份与starts并绑定prepare/snapshot引用。",
+        "ParseDescriptor严格重编码验证；RequestFingerprint对用途标签及长度前缀字段作SHA256，再写入generation。"
+      ],
+      "pitfalls": [
+        "不能简单字符串拼接造成边界歧义；snapshotRef必须等于descriptor中的引用。"
+      ],
+      "symbols": {
+        "Descriptor": {
+          "fields": {
+            "Version": "RPC watermark版本，固定1。",
+            "PrepareRef": "已签名原prepare制品内容地址。",
+            "SnapshotRef": "已签名Doc封存snapshot制品内容地址。",
+            "Cluster": "原Kafka物理cluster ID。",
+            "Topic": "原事件主题名。",
+            "TopicID": "原主题16字节UUID hex，拒绝同名换日志。",
+            "Starts": "原分区0/1/2起点L，必须与Prepare保持相同。"
+          }
+        }
+      },
+      "source_sha256": "16b73cf36a18f97fd4d8508eadfd9b2b3ec508697f8b2a978d1a71f8b5e6c3be"
+    },
+    "packages/platform/rebuildartifact/artifact.go": {
+      "purpose": "为离线重建制品签名、首次验签及恢复已接受原字节。",
+      "why": "制品可离线交接，但身份必须来自本机配置的信任根；RSA-PSS随机盐意味着重签会改变内容地址。",
+      "flow": [
+        "NewSigner检查RSA私钥与证书公钥一致；purposeRole限定prepare由Search签、snapshot由Document签。",
+        "Verifier.Verify核CA/精确单URI/clientAuth/有效期与PSS签名，然后计算envelope内容地址。",
+        "RestoreAccepted仅比对原库可信envelope与signer摘要，恢复曾验签接受的同一字节。"
+      ],
+      "pitfalls": [
+        "首次接受不得调用RestoreAccepted绕过验签；可信摘要不能来自CLI输入。",
+        "长时间恢复不重签原制品，证书过期不能改写已接受事实。"
+      ],
+      "symbols": {
+        "envelope": {
+          "fields": {
+            "Purpose": "prepare-v1或snapshot-v1用途，决定允许的签名服务角色。",
+            "Certificates": "叶证书在前的DER证书链，最多8张；信任根仍来自本地配置。",
+            "Payload": "原规范Prepare或Seal字节，最多1MiB。",
+            "Signature": "对域隔离摘要的RSA-PSS签名，随机盐使首次envelope必须持久保存。"
+          }
+        },
+        "Signer": {
+          "fields": {
+            "key": "已验证与叶证书配对的本服务RSA私钥。",
+            "certificates": "原DER证书链，签名时写入envelope。",
+            "role": "search或document，与purposeRole必须匹配。",
+            "verifier": "用本地CA构造的验证器，签名时再次检查证书仍有效。"
+          }
+        },
+        "Verifier": {
+          "fields": {
+            "roots": "仅从本地显式CA文件加载的信任根，禁止从制品决定根。"
+          }
+        },
+        "Verified": {
+          "fields": {
+            "Payload": "通过首次验签或可信持久恢复后得到的原业务元数据字节。",
+            "Reference": "整个原envelope的内容地址，包含用途与SHA256。",
+            "SignerFingerprint": "叶证书原DER SHA256 hex，接受时与envelope摘要一起存库。",
+            "Role": "由用途与已验证证书确定的search/document身份。"
+          }
+        },
+        "purposeRole": {
+          "params": {
+            "purpose": "制品用途，仅prepare-v1映射search、snapshot-v1映射document，其余返回空角色并拒绝。"
+          }
+        },
+        "signingDigest": {
+          "params": {
+            "payload": "原规范元数据字节，与固定域标签及purpose分别加8字节长度前缀后哈希。"
+          }
+        }
+      },
+      "source_sha256": "d138d6a8479f61ae3028d23f89aeb8623a574aeeefb1b9e9bbd590f261d7749e"
+    },
+    "packages/platform/rebuildartifact/files.go": {
+      "purpose": "按内容地址读写重建制品，保证发布前落盘并拒绝冲突覆盖。",
+      "why": "读引用不能变成任意路径/URL读取；写制品要先完整落盘再公布，重复发布只能接受相同字节。",
+      "flow": [
+        "FileName只接受64位hex与prepare/snapshot扩展；ReadFile要求普通文件、大小受限并核实际内容地址。",
+        "PublishFile在可信目录创建临时文件，写入同时算SHA256，Sync/Close后Rename。",
+        "目标已存在时核完整摘要一致才接受，不同内容返回FILE_CONFLICT。"
+      ],
+      "pitfalls": [
+        "Reference只检查结构与地址，不代替验签；不能让符号链接目录/文件绕过受控inbox。"
+      ],
+      "symbols": {},
+      "source_sha256": "822d24158c95a52d4cd9f5ae1cf070a436e2aec29890c0bd0bef047f75cc34c2"
+    },
+    "db/migrations/013.up.sql": {
+      "purpose": "给个人文档的失效邀请和已处理申请保存管理归档事实。",
+      "why": "用户删除管理记录时只隐藏列表，不能删除申请历史、原审批状态、原操作回执或已经获得的协作权限。",
+      "flow": [
+        "先锁文档并重验管理权限，再锁原邀请或申请检查修订及状态。",
+        "同一事务插入document_sharing_archive并推进原记录revision；管理查询以NOT EXISTS排除，申请人历史不排除。"
+      ],
+      "pitfalls": [
+        "不能归档OPEN邀请或PENDING申请；到期OPEN由业务投影为EXPIRED后允许归档。",
+        "复合主键区分两个表恰好相同的数字ID；归档表只授SELECT、INSERT，不给应用UPDATE/DELETE。"
+      ],
+      "symbols": {},
+      "terms": {
+        "record_kind": "记录类别，只允许INVITATION或APPLICATION；与record_id共同标识归档对象。",
+        "record_id": "原邀请或申请的稳定编号；保留原表作为权威事实。",
+        "archived_at": "管理者确认从列表移除的UTC时间；不替代原创建/审批时间。"
+      },
+      "source_sha256": "3ec9dd5d5d1813bdf330522410b681dead532399c11ea4cc347853ff1ef9a36b"
+    }
+  }
+}

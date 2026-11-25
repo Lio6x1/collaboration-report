@@ -1,0 +1,260 @@
+{
+  "version": "canonical-v1",
+  "vectors": [
+    {
+      "name": "unicode-and-whitespace",
+      "input": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {
+              "id": "p1"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "中😀  空格\n<&>  "
+              }
+            ]
+          }
+        ]
+      },
+      "canonical_utf8": "{\"content\":[{\"attrs\":{\"id\":\"p1\"},\"content\":[{\"text\":\"中😀  空格\\n<&>\\u2028\\u2029\",\"type\":\"text\"}],\"type\":\"paragraph\"}],\"type\":\"doc\"}",
+      "sha256": "5f63ed65669b2f26570fe26b7750fc9b5300ee129436191fec24526b1fdb2afa",
+      "byte_size": 137
+    },
+    {
+      "name": "atom-emphasis-resource",
+      "input": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {
+              "id": "p2"
+            },
+            "content": [
+              {
+                "type": "formula",
+                "attrs": {
+                  "latex": "x^2",
+                  "atomStrong": true,
+                  "atomEm": true,
+                  "atomCode": false,
+                  "atomStrike": false,
+                  "atomLink": null
+                }
+              },
+              {
+                "type": "image",
+                "attrs": {
+                  "resourceId": "9007199254740993",
+                  "alt": "图",
+                  "title": null,
+                  "width": null,
+                  "height": null,
+                  "atomStrong": true,
+                  "atomEm": true,
+                  "atomCode": false,
+                  "atomStrike": false,
+                  "atomLink": null
+                }
+              }
+            ]
+          },
+          {
+            "type": "formula_block",
+            "attrs": {
+              "id": "formula1",
+              "latex": "a+b",
+              "atomStrong": true,
+              "atomEm": true,
+              "atomCode": false,
+              "atomStrike": false,
+              "atomLink": null
+            }
+          }
+        ]
+      },
+      "canonical_utf8": "{\"content\":[{\"attrs\":{\"id\":\"p2\"},\"content\":[{\"attrs\":{\"atomCode\":false,\"atomEm\":true,\"atomLink\":null,\"atomStrike\":false,\"atomStrong\":true,\"latex\":\"x^2\"},\"type\":\"formula\"},{\"attrs\":{\"alt\":\"图\",\"atomCode\":false,\"atomEm\":true,\"atomLink\":null,\"atomStrike\":false,\"atomStrong\":true,\"height\":null,\"resourceId\":\"9007199254740993\",\"title\":null,\"width\":null},\"type\":\"image\"}],\"type\":\"paragraph\"},{\"attrs\":{\"atomCode\":false,\"atomEm\":true,\"atomLink\":null,\"atomStrike\":false,\"atomStrong\":true,\"id\":\"formula1\",\"latex\":\"a+b\"},\"type\":\"formula_block\"}],\"type\":\"doc\"}",
+      "sha256": "6ef1823be06cee989fda75e4271c50821b82dc63c22ea8248565ada4b3ba92fc",
+      "byte_size": 550
+    },
+    {
+      "name": "table-cell-identities",
+      "input": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "table",
+            "attrs": {
+              "id": "t1"
+            },
+            "content": [
+              {
+                "type": "table_row",
+                "attrs": {
+                  "id": "r1"
+                },
+                "content": [
+                  {
+                    "type": "table_cell",
+                    "attrs": {
+                      "id": "c1",
+                      "colspan": 1,
+                      "rowspan": 1,
+                      "colwidth": null
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "attrs": {
+                          "id": "p3"
+                        },
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "表格",
+                            "marks": [
+                              {
+                                "type": "strong"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "canonical_utf8": "{\"content\":[{\"attrs\":{\"id\":\"t1\"},\"content\":[{\"attrs\":{\"id\":\"r1\"},\"content\":[{\"attrs\":{\"colspan\":1,\"colwidth\":null,\"id\":\"c1\",\"rowspan\":1},\"content\":[{\"attrs\":{\"id\":\"p3\"},\"content\":[{\"marks\":[{\"type\":\"strong\"}],\"text\":\"表格\",\"type\":\"text\"}],\"type\":\"paragraph\"}],\"type\":\"table_cell\"}],\"type\":\"table_row\"}],\"type\":\"table\"}],\"type\":\"doc\"}",
+      "sha256": "e84b9cbae917d41d1924b64e1816b58008bfe1252c7a04c811fad6b5953f36fe",
+      "byte_size": 335
+    },
+    {
+      "name": "list-and-code",
+      "input": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "ordered_list",
+            "attrs": {
+              "id": "l1",
+              "order": 1
+            },
+            "content": [
+              {
+                "type": "list_item",
+                "attrs": {
+                  "id": "li1"
+                },
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {
+                      "id": "p4"
+                    },
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "list"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "code_block",
+            "attrs": {
+              "id": "code1",
+              "language": null
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "x := 1\n"
+              }
+            ]
+          }
+        ]
+      },
+      "canonical_utf8": "{\"content\":[{\"attrs\":{\"id\":\"l1\",\"order\":1},\"content\":[{\"attrs\":{\"id\":\"li1\"},\"content\":[{\"attrs\":{\"id\":\"p4\"},\"content\":[{\"text\":\"list\",\"type\":\"text\"}],\"type\":\"paragraph\"}],\"type\":\"list_item\"}],\"type\":\"ordered_list\"},{\"attrs\":{\"id\":\"code1\",\"language\":null},\"content\":[{\"text\":\"x := 1\\n\",\"type\":\"text\"}],\"type\":\"code_block\"}],\"type\":\"doc\"}",
+      "sha256": "4445547381bbc165a92f2d27613ad6483a0d956e848b3be3fd1eb44d8e7f696d",
+      "byte_size": 336
+    },
+    {
+      "name": "rich-text-language-size-strike",
+      "input": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {
+              "id": "rich1"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "删除线",
+                "marks": [
+                  {
+                    "type": "strike"
+                  }
+                ]
+              },
+              {
+                "type": "formula",
+                "attrs": {
+                  "latex": "x",
+                  "atomStrong": true,
+                  "atomEm": true,
+                  "atomCode": false,
+                  "atomStrike": true,
+                  "atomLink": null
+                }
+              },
+              {
+                "type": "image",
+                "attrs": {
+                  "resourceId": "1",
+                  "alt": null,
+                  "title": null,
+                  "width": 640,
+                  "height": 480,
+                  "atomStrong": true,
+                  "atomEm": true,
+                  "atomCode": false,
+                  "atomStrike": true,
+                  "atomLink": null
+                }
+              }
+            ]
+          },
+          {
+            "type": "code_block",
+            "attrs": {
+              "id": "rich-code",
+              "language": "go"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "fmt.Println(\"hello\")"
+              }
+            ]
+          }
+        ]
+      },
+      "canonical_utf8": "{\"content\":[{\"attrs\":{\"id\":\"rich1\"},\"content\":[{\"marks\":[{\"type\":\"strike\"}],\"text\":\"删除线\",\"type\":\"text\"},{\"attrs\":{\"atomCode\":false,\"atomEm\":true,\"atomLink\":null,\"atomStrike\":true,\"atomStrong\":true,\"latex\":\"x\"},\"type\":\"formula\"},{\"attrs\":{\"alt\":null,\"atomCode\":false,\"atomEm\":true,\"atomLink\":null,\"atomStrike\":true,\"atomStrong\":true,\"height\":480,\"resourceId\":\"1\",\"title\":null,\"width\":640},\"type\":\"image\"}],\"type\":\"paragraph\"},{\"attrs\":{\"id\":\"rich-code\",\"language\":\"go\"},\"content\":[{\"text\":\"fmt.Println(\\\"hello\\\")\",\"type\":\"text\"}],\"type\":\"code_block\"}],\"type\":\"doc\"}",
+      "sha256": "d67d48e9de0be6deb4449581ccbe4386089dc3ac8d03e50f823920c6e9cbe1ab",
+      "byte_size": 570
+    }
+  ]
+}

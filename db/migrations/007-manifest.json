@@ -1,0 +1,35 @@
+{
+  "version": 7,
+  "parentSHA256": "c421fef5a214fb588c1cdff2fd305c9f7e371e8e59c07b504893c2bd2f9fdeeb",
+  "sha256": "9af4126816f6fa09bf11048a98347c59ffd69a0ece0d2c25824532b9680517b2",
+  "indexes": [
+    {
+      "database": "document_db",
+      "table": "durable_task",
+      "name": "task_document",
+      "columns": [
+        "cleanup_document",
+        "kind",
+        "id"
+      ],
+      "generatedColumns": [
+        {
+          "name": "cleanup_document",
+          "type": "varchar(20)",
+          "collation": "ascii_bin",
+          "expression": "coalesce(\n json_unquote(json_extract(payload,'$.capture.context.target.document_id')),\n json_unquote(json_extract(payload,'$.context.target.document_id')),\n json_unquote(json_extract(payload,'$.fixed.context.target.document_id')),\n json_unquote(json_extract(payload,'$.main.context.target.document_id')),\n json_unquote(json_extract(payload,'$.Context.target.document_id')),\n json_unquote(json_extract(payload,'$.binding.context.target.document_id')),\n json_unquote(json_extract(payload,'$.Main.context.target.document_id')),\n json_unquote(json_extract(payload,'$.Input.context.target.document_id')),\n json_unquote(json_extract(payload,'$.cut.document_id')),\n json_unquote(json_extract(payload,'$.observed_cut.document_id')),\n json_unquote(json_extract(payload,'$.document')))"
+        }
+      ]
+    },
+    {
+      "database": "document_db",
+      "table": "durable_task",
+      "name": "task_operation",
+      "columns": [
+        "operation_id",
+        "kind",
+        "id"
+      ]
+    }
+  ]
+}

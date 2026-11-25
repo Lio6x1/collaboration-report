@@ -1,0 +1,123 @@
+/* 编辑与固定版本阅读共享代码呈现，样式只限定PM正文，控件不会成为正文内容。 */
+.ProseMirror :not(pre) > code {
+  padding: 0.12em 0.38em;
+  border: 1px solid #cdd8d2;
+  border-radius: 4px;
+  background: #edf2ef;
+  color: #7c3046;
+  font-family: Consolas, 'Cascadia Code', 'Courier New', monospace;
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  box-decoration-break: clone;
+}
+.ProseMirror .code-block {
+  min-width: 0;
+  margin: 16px 0;
+  border: 1px solid #c9d4ce;
+  border-radius: 7px;
+  background: #f5f8f6;
+  overflow: hidden;
+  text-align: left;
+  text-indent: 0;
+}
+.ProseMirror .code-block-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #d8e1dc;
+  background: #eaf0ec;
+  color: #465e50;
+  font:
+    14px/1.5 'Segoe UI',
+    'Microsoft YaHei',
+    sans-serif;
+  white-space: normal;
+  user-select: none;
+}
+.ProseMirror .code-block-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.ProseMirror .code-language-select {
+  width: auto;
+  min-height: 30px;
+  max-width: 200px;
+  padding: 3px 26px 3px 7px;
+  font: inherit;
+}
+.ProseMirror .code-language-select:disabled {
+  opacity: 1;
+  color: #465e50;
+}
+.ProseMirror .code-copy-button {
+  margin-left: auto;
+  min-height: 30px;
+  padding: 3px 10px;
+  font: inherit;
+}
+.ProseMirror .code-edit-hint,
+.ProseMirror .code-copy-status {
+  color: #52685b;
+  font-size: 13px;
+}
+.ProseMirror[contenteditable='false'] .code-edit-hint {
+  display: none;
+}
+.ProseMirror .code-block pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  color: #253e33;
+  font:
+    16px/1.7 Consolas,
+    'Cascadia Code',
+    'Courier New',
+    monospace;
+  white-space: pre;
+  overflow-wrap: normal;
+  tab-size: 4;
+}
+.ProseMirror .code-block pre > code {
+  display: block;
+  min-height: 1.7em;
+  font: inherit;
+  white-space: inherit;
+}
+.ProseMirror .code-block .hljs-comment,
+.ProseMirror .code-block .hljs-quote {
+  color: #607668;
+  font-style: italic;
+}
+.ProseMirror .code-block .hljs-keyword,
+.ProseMirror .code-block .hljs-selector-tag,
+.ProseMirror .code-block .hljs-literal {
+  color: #7b2f80;
+}
+.ProseMirror .code-block .hljs-string,
+.ProseMirror .code-block .hljs-regexp,
+.ProseMirror .code-block .hljs-addition {
+  color: #286342;
+}
+.ProseMirror .code-block .hljs-title,
+.ProseMirror .code-block .hljs-section,
+.ProseMirror .code-block .hljs-name {
+  color: #185a8e;
+}
+.ProseMirror .code-block .hljs-number,
+.ProseMirror .code-block .hljs-symbol,
+.ProseMirror .code-block .hljs-bullet,
+.ProseMirror .code-block .hljs-attr {
+  color: #8b4d1d;
+}
+.ProseMirror .code-block .hljs-type,
+.ProseMirror .code-block .hljs-built_in,
+.ProseMirror .code-block .hljs-meta {
+  color: #265e70;
+}
+.ProseMirror .code-block .hljs-deletion {
+  color: #a1333e;
+}

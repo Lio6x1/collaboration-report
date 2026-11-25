@@ -1,0 +1,26 @@
+{
+  "name": "@collaboration-report/collaboration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "1.14.5",
+    "@grpc/proto-loader": "0.8.1",
+    "ajv": "8.17.1",
+    "lib0": "0.2.119",
+    "markdown-it": "14.3.0",
+    "mysql2": "3.24.5",
+    "prosemirror-model": "1.25.12",
+    "prosemirror-schema-basic": "1.2.5",
+    "prosemirror-schema-list": "1.5.1",
+    "prosemirror-tables": "1.8.5",
+    "ws": "8.22.0",
+    "y-prosemirror": "1.3.7",
+    "y-protocols": "1.0.7",
+    "yjs": "13.6.33"
+  }
+}

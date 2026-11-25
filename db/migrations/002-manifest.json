@@ -1,0 +1,73 @@
+{
+  "version": 2,
+  "parentSHA256": "9c9ea8ea0a1ef726f4fa205af99402ce6a88ee25a7d3049842eb8187eaac6d8d",
+  "sha256": "c1281e2ff585f0763e110b540f5246d2c9fd9eadc294883ce7d0a26ed5288a86",
+  "indexes": [
+    {
+      "database": "account_db",
+      "table": "durable_task",
+      "name": "task_pending",
+      "columns": ["state", "kind"]
+    },
+    {
+      "database": "document_db",
+      "table": "durable_task",
+      "name": "task_pending",
+      "columns": ["state", "kind"]
+    },
+    {
+      "database": "collaboration_db",
+      "table": "durable_task",
+      "name": "task_pending",
+      "columns": ["state", "kind"]
+    },
+    {
+      "database": "search_db",
+      "table": "durable_task",
+      "name": "task_pending",
+      "columns": ["state", "kind"]
+    },
+    {
+      "database": "document_db",
+      "table": "durable_task",
+      "name": "task_kind_due",
+      "columns": ["kind", "state", "retry_at", "lease_until", "id"]
+    },
+    {
+      "database": "account_db",
+      "table": "access_gate",
+      "name": "gate_recovery",
+      "columns": ["state", "last_revocation_id", "max_epoch"]
+    },
+    {
+      "database": "document_db",
+      "table": "access_gate",
+      "name": "gate_recovery",
+      "columns": ["state", "last_revocation_id", "max_epoch"]
+    },
+    {
+      "database": "collaboration_db",
+      "table": "access_gate",
+      "name": "gate_recovery",
+      "columns": ["state", "last_revocation_id", "max_epoch"]
+    },
+    {
+      "database": "account_db",
+      "table": "authorization_change",
+      "name": "auth_recovery",
+      "columns": ["revocation_id", "scope_key", "epoch", "state"]
+    },
+    {
+      "database": "document_db",
+      "table": "authorization_change",
+      "name": "auth_recovery",
+      "columns": ["revocation_id", "scope_key", "epoch", "state"]
+    },
+    {
+      "database": "collaboration_db",
+      "table": "authorization_change",
+      "name": "auth_recovery",
+      "columns": ["revocation_id", "scope_key", "epoch", "state"]
+    }
+  ]
+}

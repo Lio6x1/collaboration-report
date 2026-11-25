@@ -1,0 +1,9 @@
+node_modules/
+.runtime/
+.superpowers/
+artifacts/
+dist/
+**/dist/
+contracts/
+packages/content/validate.mjs
+package-lock.json

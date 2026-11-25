@@ -1,0 +1,82 @@
+[
+  {
+    "id": "S01",
+    "title": "Canal事件与Doc当前正式投影",
+    "page": "lessons/search/01-event-authority.md",
+    "files": [
+      "services/search/internal/domain/event/events_models.go",
+      "services/search/internal/domain/event/canal.go",
+      "services/search/internal/domain/index/projection_models.go",
+      "services/search/internal/client/document/snapshot.go",
+      "services/search/internal/client/elastic/client.go",
+      "services/search/internal/client/elastic/mapping_client.go",
+      "services/search/internal/client/elastic/projection_client.go"
+    ]
+  },
+  {
+    "id": "S02",
+    "title": "持久消费、日志身份与代次锁",
+    "page": "lessons/search/02-consumer-ledger.md",
+    "files": [
+      "services/search/internal/client/kafka/client.go",
+      "services/search/internal/client/kafka/window.go",
+      "services/search/internal/client/logsource/window.go",
+      "services/search/internal/client/logsource/records.go",
+      "services/search/internal/client/logsource/read.go",
+      "services/search/internal/repository/event/validation.go",
+      "services/search/internal/repository/event/events_queries.go",
+      "services/search/internal/repository/generation/active.go",
+      "services/search/internal/logic/generation/guard.go",
+      "services/search/internal/logic/indexing/processor.go",
+      "services/search/internal/logic/indexing/indexing_service.go",
+      "services/search/internal/logic/consumer/consumer.go",
+      "services/search/internal/svc/log_identity.go",
+      "services/search/internal/svc/consumer_wiring.go",
+      "services/search/internal/worker/consumer.go"
+    ]
+  },
+  {
+    "id": "S03",
+    "title": "签名批锚点、PIT与当前权限二次过滤",
+    "page": "lessons/search/03-candidates-cursor.md",
+    "files": [
+      "services/search/internal/domain/cursor/pagination_models.go",
+      "services/search/internal/domain/cursor/anchor.go",
+      "services/search/internal/domain/cursor/digest.go",
+      "services/search/internal/repository/cursor/registry.go",
+      "services/search/internal/repository/cursor/pagination_queries.go",
+      "services/search/internal/client/elastic/candidates.go",
+      "services/search/internal/logic/candidates/candidates_service.go",
+      "services/search/internal/svc/candidates.go",
+      "services/search/internal/worker/cursors.go"
+    ]
+  },
+  {
+    "id": "S04",
+    "title": "先封存L，再导入签名快照并种子回填",
+    "page": "lessons/search/04-rebuild-snapshot.md",
+    "files": [
+      "services/search/internal/repository/rebuild/preparation_queries.go",
+      "services/search/internal/repository/rebuild/installation_queries.go",
+      "services/search/internal/logic/rebuild/preparation_service.go",
+      "services/search/internal/logic/rebuild/installation_service.go",
+      "services/search/cmd/search-rebuild-prepare/main.go",
+      "services/search/cmd/search-rebuild-import/main.go"
+    ]
+  },
+  {
+    "id": "S05",
+    "title": "固定窗口重放、完整核验与别名恢复切换",
+    "page": "lessons/search/05-cutover-wiring.md",
+    "files": [
+      "services/search/internal/repository/rebuild/completion_queries.go",
+      "services/search/internal/logic/rebuild/completion_service.go",
+      "services/search/internal/client/elastic/aliases_client.go",
+      "services/search/internal/worker/rebuild.go",
+      "services/search/internal/svc/rebuild_wiring.go",
+      "services/search/internal/server/rpc_server.go",
+      "services/search/internal/bootstrap/search.go",
+      "services/search/main.go"
+    ]
+  }
+]

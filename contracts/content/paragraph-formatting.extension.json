@@ -1,0 +1,8 @@
+{
+  "version": "paragraph-formatting-v1",
+  "nodes": ["paragraph", "heading"],
+  "attributes": {
+    "align": { "enum": ["left", "center", "right"] },
+    "firstLineIndent": { "type": "boolean" }
+  }
+}

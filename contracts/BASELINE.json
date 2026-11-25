@@ -1,0 +1,10 @@
+{
+  "version": "implementation-ready-2026-10-03",
+  "files": {
+    "http/openapi.json": "4697435b3a909df82f6524b1ce0909a0c15fa7a1b3aa0880bebce58022811c6e",
+    "proto/internal.proto": "b20b89170e8880ef95ea5d66ee4b639e39c7a5010959bfbcd04898d0b4bab143",
+    "content/content.schema.json": "4b08042b396b2be7e9c93b5174d03bd548d6c6ab3c2c5805cb72a2ac4248fae7",
+    "content/provenance.schema.json": "94f060c076857ed2d6d9f3b1f6169badf3081afb794270092f825576a8468e4e",
+    "content/canonical-vectors.json": "2930442c8226c2318320b8f890bb538912b66a3a74a07b97e6ad1f96a3c91d2c"
+  }
+}

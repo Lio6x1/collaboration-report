@@ -1,0 +1,51 @@
+# 阶段05文件与答案：发布搜索投影与重建
+
+先读[本阶段功能讲义](05-search.md)，按讲义安排的创建与实现顺序学习。本表是45个文件的查找目录，表内序号只用于定位，不是教学顺序。逐段编写页与完整答案分开；已完成的阶段保留，不切换Git、不覆盖整棵服务树。
+
+| 索引 | 学习工程内目标 | 分步操作 | 章末核对 |
+| --- | --- | --- | --- |
+| 1 | `services/search/internal/domain/cursor/anchor.go` | [逐段编写](write/366-anchor.md) | [完整答案](source/366-anchor.md) |
+| 2 | `services/search/internal/domain/cursor/digest.go` | [逐段编写](write/367-digest.md) | [完整答案](source/367-digest.md) |
+| 3 | `services/search/internal/domain/cursor/pagination_models.go` | [逐段编写](write/368-pagination-models.md) | [完整答案](source/368-pagination-models.md) |
+| 4 | `services/search/internal/domain/event/canal.go` | [逐段编写](write/369-canal.md) | [完整答案](source/369-canal.md) |
+| 5 | `services/search/internal/domain/event/events_models.go` | [逐段编写](write/370-events-models.md) | [完整答案](source/370-events-models.md) |
+| 6 | `services/search/internal/domain/index/projection_models.go` | [逐段编写](write/371-projection-models.md) | [完整答案](source/371-projection-models.md) |
+| 7 | `services/search/internal/client/document/snapshot.go` | [逐段编写](write/372-snapshot.md) | [完整答案](source/372-snapshot.md) |
+| 8 | `services/search/internal/client/elastic/aliases_client.go` | [逐段编写](write/373-aliases-client.md) | [完整答案](source/373-aliases-client.md) |
+| 9 | `services/search/internal/client/elastic/candidates.go` | [逐段编写](write/374-candidates.md) | [完整答案](source/374-candidates.md) |
+| 10 | `services/search/internal/client/elastic/client.go` | [逐段编写](write/375-client.md) | [完整答案](source/375-client.md) |
+| 11 | `services/search/internal/client/elastic/mapping_client.go` | [逐段编写](write/376-mapping-client.md) | [完整答案](source/376-mapping-client.md) |
+| 12 | `services/search/internal/client/elastic/projection_client.go` | [逐段编写](write/377-projection-client.md) | [完整答案](source/377-projection-client.md) |
+| 13 | `services/search/internal/client/kafka/client.go` | [逐段编写](write/378-client.md) | [完整答案](source/378-client.md) |
+| 14 | `services/search/internal/client/kafka/window.go` | [逐段编写](write/379-window.md) | [完整答案](source/379-window.md) |
+| 15 | `services/search/internal/client/logsource/read.go` | [逐段编写](write/380-read.md) | [完整答案](source/380-read.md) |
+| 16 | `services/search/internal/client/logsource/records.go` | [逐段编写](write/381-records.md) | [完整答案](source/381-records.md) |
+| 17 | `services/search/internal/client/logsource/window.go` | [逐段编写](write/382-window.md) | [完整答案](source/382-window.md) |
+| 18 | `services/search/internal/repository/cursor/pagination_queries.go` | [逐段编写](write/383-pagination-queries.md) | [完整答案](source/383-pagination-queries.md) |
+| 19 | `services/search/internal/repository/cursor/registry.go` | [逐段编写](write/384-registry.md) | [完整答案](source/384-registry.md) |
+| 20 | `services/search/internal/repository/event/events_queries.go` | [逐段编写](write/385-events-queries.md) | [完整答案](source/385-events-queries.md) |
+| 21 | `services/search/internal/repository/event/validation.go` | [逐段编写](write/386-validation.md) | [完整答案](source/386-validation.md) |
+| 22 | `services/search/internal/repository/generation/active.go` | [逐段编写](write/387-active.md) | [完整答案](source/387-active.md) |
+| 23 | `services/search/internal/repository/rebuild/completion_queries.go` | [逐段编写](write/388-completion-queries.md) | [完整答案](source/388-completion-queries.md) |
+| 24 | `services/search/internal/repository/rebuild/installation_queries.go` | [逐段编写](write/389-installation-queries.md) | [完整答案](source/389-installation-queries.md) |
+| 25 | `services/search/internal/repository/rebuild/preparation_queries.go` | [逐段编写](write/390-preparation-queries.md) | [完整答案](source/390-preparation-queries.md) |
+| 26 | `services/search/internal/logic/candidates/candidates_service.go` | [逐段编写](write/391-candidates-service.md) | [完整答案](source/391-candidates-service.md) |
+| 27 | `services/search/internal/logic/consumer/consumer.go` | [逐段编写](write/392-consumer.md) | [完整答案](source/392-consumer.md) |
+| 28 | `services/search/internal/logic/generation/guard.go` | [逐段编写](write/393-guard.md) | [完整答案](source/393-guard.md) |
+| 29 | `services/search/internal/logic/indexing/indexing_service.go` | [逐段编写](write/394-indexing-service.md) | [完整答案](source/394-indexing-service.md) |
+| 30 | `services/search/internal/logic/indexing/processor.go` | [逐段编写](write/395-processor.md) | [完整答案](source/395-processor.md) |
+| 31 | `services/search/internal/logic/rebuild/completion_service.go` | [逐段编写](write/396-completion-service.md) | [完整答案](source/396-completion-service.md) |
+| 32 | `services/search/internal/logic/rebuild/installation_service.go` | [逐段编写](write/397-installation-service.md) | [完整答案](source/397-installation-service.md) |
+| 33 | `services/search/internal/logic/rebuild/preparation_service.go` | [逐段编写](write/398-preparation-service.md) | [完整答案](source/398-preparation-service.md) |
+| 34 | `services/search/internal/server/rpc_server.go` | [逐段编写](write/399-rpc-server.md) | [完整答案](source/399-rpc-server.md) |
+| 35 | `services/search/internal/worker/consumer.go` | [逐段编写](write/400-consumer.md) | [完整答案](source/400-consumer.md) |
+| 36 | `services/search/internal/worker/cursors.go` | [逐段编写](write/401-cursors.md) | [完整答案](source/401-cursors.md) |
+| 37 | `services/search/internal/worker/rebuild.go` | [逐段编写](write/402-rebuild.md) | [完整答案](source/402-rebuild.md) |
+| 38 | `services/search/internal/svc/candidates.go` | [逐段编写](write/403-candidates.md) | [完整答案](source/403-candidates.md) |
+| 39 | `services/search/internal/svc/consumer_wiring.go` | [逐段编写](write/404-consumer-wiring.md) | [完整答案](source/404-consumer-wiring.md) |
+| 40 | `services/search/internal/svc/log_identity.go` | [逐段编写](write/405-log-identity.md) | [完整答案](source/405-log-identity.md) |
+| 41 | `services/search/internal/svc/rebuild_wiring.go` | [逐段编写](write/406-rebuild-wiring.md) | [完整答案](source/406-rebuild-wiring.md) |
+| 42 | `services/search/internal/bootstrap/search.go` | [逐段编写](write/407-search.md) | [完整答案](source/407-search.md) |
+| 43 | `services/search/cmd/search-rebuild-import/main.go` | [逐段编写](write/408-main.md) | [完整答案](source/408-main.md) |
+| 44 | `services/search/cmd/search-rebuild-prepare/main.go` | [逐段编写](write/409-main.md) | [完整答案](source/409-main.md) |
+| 45 | `services/search/main.go` | [逐段编写](write/410-main.md) | [完整答案](source/410-main.md) |

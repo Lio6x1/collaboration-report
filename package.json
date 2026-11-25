@@ -1,0 +1,35 @@
+{
+  "name": "collaboration-report",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "web",
+    "services/collaboration"
+  ],
+  "scripts": {
+    "test": "node --test tests/unit/*.test.mjs",
+    "contracts": "node scripts/generate-contracts.mjs",
+    "content": "node scripts/generate-content.mjs",
+    "content:check": "node scripts/generate-content.mjs --check",
+    "bootstrap": "node scripts/dev-environment.mjs up",
+    "search:bootstrap": "node scripts/search-environment.mjs",
+    "start": "node scripts/start.mjs",
+    "stop": "node scripts/start.mjs stop",
+    "format": "prettier --write \"{services,packages,web,scripts,tests}/**/*.{js,mjs,ts,vue,css}\" package.json .prettierrc.json",
+    "format:check": "prettier --check \"{services,packages,web,scripts,tests}/**/*.{js,mjs,ts,vue,css}\" package.json .prettierrc.json"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "1.14.5",
+    "@grpc/proto-loader": "0.8.1",
+    "katex": "0.18.9",
+    "mysql2": "3.24.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "prettier": "3.9.9"
+  },
+  "engines": {
+    "node": ">=24.15.0"
+  }
+}

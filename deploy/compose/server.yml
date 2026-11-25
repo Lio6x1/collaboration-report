@@ -1,0 +1,311 @@
+name: ${COLLAB_PROJECT}
+
+x-owned: &owned
+  labels:
+    collaboration.report.owner: ${COLLAB_OWNER}
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: '3'
+
+services:
+  mysql:
+    <<: *owned
+    image: mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql-root-password
+      MYSQL_ROOT_HOST: '%'
+    secrets: [mysql-root-password]
+    command:
+      - --innodb-flush-log-at-trx-commit=1
+      - --default-time-zone=+00:00
+      - --server-id=18061006
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --binlog-row-image=FULL
+    healthcheck:
+      # mysqladmin只检查daemon存活；真正root认证/迁移在initialize完成。
+      test: [CMD, mysqladmin, ping, -h, localhost, --silent]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 30s
+    stop_grace_period: 30s
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  redis:
+    <<: *owned
+    image: redis@sha256:ccd6aa8d45ff3f033d6fa15b8cc1a50579f65c89f38cf9bb607a954c4f2128ed
+    restart: unless-stopped
+    # 宿主秘密为0600，不向其他用户放开。入口以root复制这两份明确文件，
+    # 随后降权为镜像原redis用户；不递归修改原数据卷或读取application目录。
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        umask 077
+        mkdir -p /data/.server-config
+        cp /usr/local/etc/redis/users.acl /data/.server-config/users.acl
+        sed 's|/usr/local/etc/redis/users.acl|/data/.server-config/users.acl|' /usr/local/etc/redis/redis.conf > /data/.server-config/redis.conf
+        chown redis:redis /data /data/.server-config /data/.server-config/users.acl /data/.server-config/redis.conf
+        exec /usr/bin/setpriv --reuid redis --regid redis --clear-groups redis-server /data/.server-config/redis.conf
+    healthcheck:
+      # default关闭时unauth PING应收到NOAUTH；初始化随后实际AUTH核验受限账号。
+      test: [CMD-SHELL, 'redis-cli ping 2>&1 | grep -q NOAUTH']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 30s
+    volumes:
+      - type: bind
+        source: ${COLLAB_DEPLOYMENT_DIRECTORY}/admin/redis
+        target: /usr/local/etc/redis
+        read_only: true
+        bind:
+          create_host_path: false
+      - redis-data:/data
+
+  kafka-volume-init:
+    <<: *owned
+    image: apache/kafka@sha256:41c20d65b0a2180b9deca056d47540771752e69fe9225d5748dd65a25a9675d7
+    user: '0:0'
+    entrypoint: /bin/sh
+    # 仅修改原命名卷根目录；不递归chown、不格式化或替换已有KRaft身份。
+    command: [-c, 'chown 1000:1000 /tmp/kraft-combined-logs']
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    volumes:
+      - kafka-data:/tmp/kraft-combined-logs
+
+  kafka:
+    <<: *owned
+    image: apache/kafka@sha256:41c20d65b0a2180b9deca056d47540771752e69fe9225d5748dd65a25a9675d7
+    hostname: kafka
+    restart: unless-stopped
+    depends_on:
+      kafka-volume-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_NODE_ID: '1'
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: INTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: '1'
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: '1'
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: '1'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+      KAFKA_NUM_PARTITIONS: '3'
+      KAFKA_LOG_RETENTION_HOURS: '168'
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+    healthcheck:
+      test:
+        [
+          CMD-SHELL,
+          '/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:29092 --list >/dev/null',
+        ]
+      interval: 10s
+      timeout: 8s
+      retries: 24
+      start_period: 20s
+    stop_grace_period: 30s
+    volumes:
+      - kafka-data:/tmp/kraft-combined-logs
+
+  kafka-topic-init:
+    <<: *owned
+    image: apache/kafka@sha256:41c20d65b0a2180b9deca056d47540771752e69fe9225d5748dd65a25a9675d7
+    entrypoint: /bin/sh
+    depends_on:
+      kafka:
+        condition: service_healthy
+    # 既有主题只核验3个分区；不重新创建、不前移消费者offset或更换日志身份。
+    command:
+      - -ec
+      - |
+        /opt/kafka/bin/kafka-topics.sh --version | grep -q '^3\.7\.0'
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic collab-publications-v1 --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --describe --topic collab-publications-v1 | grep -Eq 'PartitionCount:[[:space:]]*3([[:space:]]|$$)'
+        echo '{"stage":"SERVER_SEARCH_TOPIC_VERIFIED","partitions":3}'
+
+  es:
+    <<: *owned
+    image: docker.elastic.co/elasticsearch/elasticsearch@sha256:13bb550524faa2aef6950b13fb6414c73b957e97e6169e5808743c8378614599
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: 'false'
+    healthcheck:
+      test:
+        [
+          CMD-SHELL,
+          'curl -fsS "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=1s" | grep -Eq ''"status":"(yellow|green)"''',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    stop_grace_period: 30s
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+
+  initialize:
+    <<: *owned
+    image: ${COLLAB_APPLICATION_IMAGE}
+    profiles: [initialize]
+    init: true
+    restart: 'no'
+    command: [node, scripts/server-initialize.mjs]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka-topic-init:
+        condition: service_completed_successfully
+      es:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: ${COLLAB_DEPLOYMENT_DIRECTORY}/application
+        target: /app/.runtime
+        bind:
+          create_host_path: false
+      # root/Canal/bootstrap秘密只供一次性安装步骤，不挂给application。
+      - type: bind
+        source: ${COLLAB_DEPLOYMENT_DIRECTORY}/admin/credentials.json
+        target: /run/collab-admin/credentials.json
+        read_only: true
+        bind:
+          create_host_path: false
+
+  canal:
+    <<: *owned
+    image: canal/canal-server@sha256:5dd84c4d8f6a6755bfb154ed8df1f85ec88c08c11501868d7b0de7b59db7f833
+    restart: unless-stopped
+    depends_on:
+      initialize:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+    env_file:
+      - ${COLLAB_DEPLOYMENT_DIRECTORY}/admin/canal.env
+    environment:
+      canal.destinations: publication
+      canal.auto.scan: 'false'
+      canal.serverMode: kafka
+      canal.auto.reset.latest.pos.mode: 'false'
+      canal.file.data.dir: /home/admin/canal-server/meta
+      canal.instance.master.address: mysql:3306
+      canal.instance.mysql.slaveId: '18061007'
+      canal.instance.dbUsername: collab_canal
+      canal.instance.connectionCharset: UTF-8
+      canal.instance.filter.regex: 'document_db\.outbox'
+      canal.instance.filter.black.regex: '(mysql|information_schema|performance_schema|sys)\..*'
+      canal.mq.flatMessage: 'true'
+      canal.mq.topic: collab-publications-v1
+      canal.mq.partitionsNum: '3'
+      canal.mq.partitionHash: document_db.outbox:aggregate_id
+      canal.mq.database.hash: 'false'
+      kafka.bootstrap.servers: kafka:29092
+      kafka.acks: all
+      kafka.max.in.flight.requests.per.connection: '1'
+    healthcheck:
+      test:
+        [
+          CMD-SHELL,
+          'test -s /home/admin/canal-server/bin/canal.pid && kill -0 "$$(cat /home/admin/canal-server/bin/canal.pid)"',
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 40s
+    stop_grace_period: 30s
+    volumes:
+      - canal-position:/home/admin/canal-server/meta
+
+  replication-ready:
+    <<: *owned
+    image: ${COLLAB_APPLICATION_IMAGE}
+    profiles: [initialize]
+    init: true
+    restart: 'no'
+    command: [node, scripts/server-initialize.mjs, --replication-ready]
+    depends_on:
+      canal:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: ${COLLAB_DEPLOYMENT_DIRECTORY}/application
+        target: /app/.runtime
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${COLLAB_DEPLOYMENT_DIRECTORY}/admin/credentials.json
+        target: /run/collab-admin/credentials.json
+        read_only: true
+        bind:
+          create_host_path: false
+
+  application:
+    <<: *owned
+    image: ${COLLAB_APPLICATION_IMAGE}
+    init: true
+    restart: unless-stopped
+    command: [node, scripts/server-start.mjs]
+    depends_on:
+      initialize:
+        condition: service_completed_successfully
+      replication-ready:
+        condition: service_completed_successfully
+    # 四角色、Edge及开发SMTP在同一PID空间；仅Edge监听公网，业务peer仍loopback mTLS。
+    ports:
+      - '${COLLAB_HTTPS_PORT}:8443'
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    healthcheck:
+      test: [CMD, node, scripts/server-health.mjs]
+      interval: 10s
+      timeout: 15s
+      retries: 6
+      start_period: 60s
+    volumes:
+      - type: bind
+        source: ${COLLAB_DEPLOYMENT_DIRECTORY}/application
+        target: /app/.runtime
+        bind:
+          create_host_path: false
+
+secrets:
+  mysql-root-password:
+    file: ${COLLAB_DEPLOYMENT_DIRECTORY}/admin/mysql-root-password
+
+volumes:
+  mysql-data:
+    labels:
+      collaboration.report.owner: ${COLLAB_OWNER}
+  redis-data:
+    labels:
+      collaboration.report.owner: ${COLLAB_OWNER}
+  kafka-data:
+    labels:
+      collaboration.report.owner: ${COLLAB_OWNER}
+  es-data:
+    labels:
+      collaboration.report.owner: ${COLLAB_OWNER}
+  canal-position:
+    labels:
+      collaboration.report.owner: ${COLLAB_OWNER}
+
+networks:
+  default:
+    labels:
+      collaboration.report.owner: ${COLLAB_OWNER}

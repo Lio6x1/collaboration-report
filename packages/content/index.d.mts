@@ -1,0 +1,10 @@
+import type {Schema} from 'prosemirror-model';
+import type {Doc} from 'yjs';
+export const schema: Schema;
+export function normalizeContent(value:unknown,options?:{workspaceKind?:string}):any;
+export function canonical(value:unknown):string;
+export function toPM(value:unknown):any;
+export function fromPM(value:unknown):any;
+export function atomFields(marks?:any[]):Record<string,unknown>;
+export function resourceIds(value:unknown):string[];
+export function prepareCandidate(host:Doc,update:Uint8Array,options?:{workspaceKind?:string}):{doc:Doc;body:any;resources:string[];canonical:string};

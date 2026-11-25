@@ -1,0 +1,110 @@
+{
+  "/grpc.health.v1.Health/Check": [
+    "account",
+    "document",
+    "search",
+    "collaboration"
+  ],
+  "/collaboration.v1.IdentityInternal/AcquireIdentityAdmission": [
+    "document"
+  ],
+  "/collaboration.v1.IdentityInternal/RevalidateIdentityAdmission": [
+    "document"
+  ],
+  "/collaboration.v1.IdentityInternal/FenceAccess": [
+    "document"
+  ],
+  "/collaboration.v1.IdentityInternal/GetAuthorizationChange": [
+    "document"
+  ],
+  "/collaboration.v1.IdentityInternal/GetAccountOperation": [
+    "document"
+  ],
+  "/collaboration.v1.DocumentInternal/RedeemCollaborationTicket": [
+    "collaboration"
+  ],
+  "/collaboration.v1.DocumentInternal/GetOperationResult": [
+    "collaboration"
+  ],
+  "/collaboration.v1.DocumentInternal/FenceAccess": [
+    "account"
+  ],
+  "/collaboration.v1.DocumentInternal/GetFenceResult": [
+    "account"
+  ],
+  "/collaboration.v1.DocumentInternal/GetPublicSnapshot": [
+    "search"
+  ],
+  "/collaboration.v1.DocumentInternal/AuthorizeCandidateCleanup": [
+    "collaboration"
+  ],
+  "/collaboration.v1.DocumentInternal/ReserveAdminRetirement": [
+    "account"
+  ],
+  "/collaboration.v1.DocumentInternal/PrepareLifecyclePlan": [
+    "account"
+  ],
+  "/collaboration.v1.DocumentInternal/ApplyLifecyclePlan": [
+    "account"
+  ],
+  "/collaboration.v1.DocumentInternal/ProtectDraftResources": [
+    "collaboration"
+  ],
+  "/collaboration.v1.DocumentInternal/GetDraftResourceProtection": [
+    "collaboration"
+  ],
+  "/collaboration.v1.DocumentInternal/ConfirmDraftResources": [
+    "collaboration"
+  ],
+  "/collaboration.v1.DocumentInternal/ReleaseDraftResources": [
+    "collaboration"
+  ],
+  "/collaboration.v1.CollaborationInternal/CaptureSubmission": [
+    "document"
+  ],
+  "/collaboration.v1.CollaborationInternal/GetCapture": [
+    "document"
+  ],
+  "/collaboration.v1.CollaborationInternal/FinalizeCapture": [
+    "document"
+  ],
+  "/collaboration.v1.CollaborationInternal/CaptureMainView": [
+    "document"
+  ],
+  "/collaboration.v1.CollaborationInternal/CaptureDraftPreview": [
+    "document"
+  ],
+  "/collaboration.v1.CollaborationInternal/ApplyDraftResolution": [
+    "document"
+  ],
+  "/collaboration.v1.CollaborationInternal/ComputeMergeCandidate": [
+    "document"
+  ],
+  "/collaboration.v1.CollaborationInternal/PrepareMainCommit": [
+    "document"
+  ],
+  "/collaboration.v1.CollaborationInternal/ReconcileMainCommit": [
+    "document"
+  ],
+  "/collaboration.v1.CollaborationInternal/FenceAccess": [
+    "document"
+  ],
+  "/collaboration.v1.CollaborationInternal/GetFenceResult": [
+    "document"
+  ],
+  "/collaboration.v1.CollaborationInternal/CleanupCandidate": [
+    "document"
+  ],
+  "/collaboration.v1.SearchInternal/SearchCandidates": [
+    "document"
+  ],
+  "/collaboration.v1.SearchInternal/CloseCursor": [
+    "document"
+  ],
+  "/collaboration.v1.SearchInternal/StartRebuild": [
+    "document"
+  ],
+  "/collaboration.v1.SearchInternal/GetRebuild": [
+    "document"
+  ]
+}

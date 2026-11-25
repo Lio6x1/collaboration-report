@@ -1,0 +1,7 @@
+{
+  "region": "cn-shenzhen",
+  "endpoint": "https://oss-cn-shenzhen.aliyuncs.com",
+  "bucket": "collaboration-report",
+  "prefix": "collabreport-tests/dev-fc4e4e3b/",
+  "credentialsFile": "D:/job/golang/projects/collaboration-report/.runtime/private/oss-credentials.json"
+}

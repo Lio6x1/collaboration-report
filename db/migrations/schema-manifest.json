@@ -1,0 +1,3095 @@
+{
+  "version": 1,
+  "mysql": "8.0.46",
+  "sha256": "9c9ea8ea0a1ef726f4fa205af99402ce6a88ee25a7d3049842eb8187eaac6d8d",
+  "databases": {
+    "account_db": [
+      {
+        "name": "user",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "email VARCHAR(254) NULL",
+          "email_key VARBINARY(254) NULL",
+          "display_name VARCHAR(100) NOT NULL",
+          "password_hash VARBINARY(255) NULL",
+          "password_algorithm VARCHAR(32) NULL",
+          "state VARCHAR(20) NOT NULL",
+          "credential_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "identity_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "email_verified_at DATETIME(6) NULL",
+          "closed_at DATETIME(6) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY user_email(email_key)",
+          "INDEX user_state(state,id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('PENDING','ACTIVE','REVOKING','CLOSED'))"
+        ]
+      },
+      {
+        "name": "session",
+        "columns": [
+          "id BINARY(32) NOT NULL",
+          "user_id BIGINT UNSIGNED NOT NULL",
+          "csrf_hash BINARY(32) NOT NULL",
+          "credential_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "state VARCHAR(16) NOT NULL",
+          "expires_at DATETIME(6) NOT NULL",
+          "last_seen_at DATETIME(6) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "INDEX session_user(user_id,state,id)",
+          "INDEX session_expiry(state,expires_at)"
+        ],
+        "checks": [
+          "CHECK (state IN ('ACTIVE','REVOKING','CLOSED'))"
+        ]
+      },
+      {
+        "name": "verification_consumption",
+        "columns": [
+          "challenge_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "purpose VARCHAR(24) NOT NULL",
+          "subject_key BINARY(32) NOT NULL",
+          "user_id BIGINT UNSIGNED NULL",
+          "credential_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "consumed_at DATETIME(6) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(challenge_id)",
+          "INDEX consumed_subject(subject_key,purpose,consumed_at)"
+        ],
+        "checks": [
+          "CHECK (purpose IN ('SIGNUP','RESET_PASSWORD','CHANGE_EMAIL'))"
+        ]
+      },
+      {
+        "name": "organization",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "name VARCHAR(160) NOT NULL",
+          "owner_id BIGINT UNSIGNED NOT NULL",
+          "lifecycle VARCHAR(20) NOT NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "member_revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "event_seq BIGINT UNSIGNED NOT NULL DEFAULT 0",
+          "closed_at DATETIME(6) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "INDEX org_owner(owner_id,id)"
+        ],
+        "checks": [
+          "CHECK (lifecycle IN ('ACTIVE','CLOSING','CLOSED'))"
+        ]
+      },
+      {
+        "name": "organization_member",
+        "columns": [
+          "organization_id BIGINT UNSIGNED NOT NULL",
+          "user_id BIGINT UNSIGNED NOT NULL",
+          "role VARCHAR(16) NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(organization_id,user_id)",
+          "INDEX member_user(user_id,state,organization_id)"
+        ],
+        "checks": [
+          "CHECK (role IN ('MEMBER','ADMIN'))",
+          "CHECK (state IN ('ACTIVE','REVOKING','CLOSED'))"
+        ]
+      },
+      {
+        "name": "organization_invitation",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "organization_id BIGINT UNSIGNED NOT NULL",
+          "inviter_id BIGINT UNSIGNED NOT NULL",
+          "token_hash BINARY(32) NOT NULL",
+          "token_ciphertext VARBINARY(512) NOT NULL",
+          "token_key_id VARCHAR(64) NOT NULL",
+          "state VARCHAR(20) NOT NULL",
+          "expires_at DATETIME(6) NOT NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY invitation_token(token_hash)",
+          "UNIQUE KEY invitation_scope(id,organization_id)",
+          "INDEX invitation_page(organization_id,state,id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('OPEN','CLOSED','EXPIRED'))"
+        ]
+      },
+      {
+        "name": "organization_application",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "organization_id BIGINT UNSIGNED NOT NULL",
+          "applicant_id BIGINT UNSIGNED NOT NULL",
+          "source_invitation_id BIGINT UNSIGNED NULL",
+          "invitation_valid_at_submit BOOLEAN NULL",
+          "invitation_validated_at DATETIME(6) NULL",
+          "reason VARCHAR(2000) NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "reviewer_id BIGINT UNSIGNED NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "INDEX application_pending(organization_id,state,id)",
+          "INDEX application_user(applicant_id,id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('PENDING','ACCEPTED','REJECTED','CANCELLED'))",
+          "CHECK ((source_invitation_id IS NULL AND invitation_valid_at_submit IS NULL AND invitation_validated_at IS NULL) OR (source_invitation_id IS NOT NULL AND invitation_valid_at_submit IS TRUE AND invitation_validated_at IS NOT NULL))"
+        ]
+      },
+      {
+        "name": "organization_creation_grant",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "organization_id BIGINT UNSIGNED NOT NULL",
+          "user_id BIGINT UNSIGNED NOT NULL",
+          "capability VARCHAR(24) NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY creation_grant(organization_id,user_id,capability)"
+        ],
+        "checks": [
+          "CHECK (capability IN ('CREATE_KNOWLEDGE_BASE'))",
+          "CHECK (state IN ('ACTIVE','CLOSED'))"
+        ]
+      },
+      {
+        "name": "identity_admission",
+        "columns": [
+          "admission_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "actor_id BIGINT UNSIGNED NOT NULL",
+          "session_id BINARY(32) NOT NULL",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "purpose VARCHAR(40) NOT NULL",
+          "target_json JSON NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "expires_at DATETIME(6) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(admission_id)",
+          "INDEX admission_actor(actor_id,state,admission_id)",
+          "INDEX admission_operation(operation_id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('OPEN','CLOSED'))"
+        ]
+      },
+      {
+        "name": "admission_source",
+        "columns": [
+          "admission_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(admission_id,scope_key)",
+          "INDEX admission_source_reverse(scope_key,epoch,admission_id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "account_close",
+        "columns": [
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "user_id BIGINT UNSIGNED NOT NULL",
+          "state VARCHAR(24) NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "retention_plan JSON NULL",
+          "retry_at DATETIME(6) NULL",
+          "last_error VARCHAR(64) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(operation_id)",
+          "INDEX account_close_user(user_id,state)",
+          "INDEX account_close_due(state,retry_at)"
+        ],
+        "checks": [
+          "CHECK (state IN ('PREPARING','FROZEN','PLANNED','CLEANING','SUCCEEDED','REJECTED'))"
+        ]
+      },
+      {
+        "name": "organization_transition",
+        "columns": [
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "organization_id BIGINT UNSIGNED NOT NULL",
+          "actor_id BIGINT UNSIGNED NOT NULL",
+          "target_user_id BIGINT UNSIGNED NULL",
+          "kind VARCHAR(24) NOT NULL",
+          "expected_revision BIGINT UNSIGNED NOT NULL",
+          "state VARCHAR(24) NOT NULL",
+          "fixed_plan JSON NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(operation_id)",
+          "INDEX organization_transition_state(organization_id,state)"
+        ],
+        "checks": [
+          "CHECK (kind IN ('TRANSFER_OWNER','LEAVE','CLOSE','ROLE_CHANGE'))",
+          "CHECK (state IN ('PREPARING','FENCING','APPLIED','SUCCEEDED','REJECTED'))"
+        ]
+      },
+      {
+        "name": "operation_receipt",
+        "columns": [
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "actor_id BIGINT UNSIGNED NOT NULL",
+          "kind VARCHAR(40) NOT NULL",
+          "target_json JSON NOT NULL",
+          "request_fingerprint BINARY(32) NOT NULL",
+          "state VARCHAR(24) NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "identity_admission_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "result_json JSON NULL",
+          "expires_at DATETIME(6) NOT NULL",
+          "terminal_at DATETIME(6) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(operation_id)",
+          "INDEX operation_actor(actor_id,created_at,operation_id)",
+          "INDEX operation_due(state,expires_at)"
+        ],
+        "checks": [
+          "CHECK (state IN ('PREPARING','SUCCEEDED','REJECTED','CANCELLED'))"
+        ]
+      },
+      {
+        "name": "durable_task",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "kind VARCHAR(40) NOT NULL",
+          "business_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "payload JSON NOT NULL",
+          "state VARCHAR(20) NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "instance_id VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "lease_until DATETIME(6) NULL",
+          "retry_at DATETIME(6) NOT NULL",
+          "attempts INT UNSIGNED NOT NULL DEFAULT 0",
+          "last_error VARCHAR(64) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY task_business(kind,business_key)",
+          "INDEX task_due(state,retry_at,id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('QUEUED','RUNNING','RETRY','SUCCEEDED','REJECTED','UNKNOWN'))"
+        ]
+      },
+      {
+        "name": "access_gate",
+        "columns": [
+          "scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "max_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "state VARCHAR(16) NOT NULL",
+          "last_revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(scope_key)"
+        ],
+        "checks": [
+          "CHECK (state IN ('OPEN','BLOCKED'))"
+        ]
+      },
+      {
+        "name": "authorization_change",
+        "columns": [
+          "revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "actor_id BIGINT UNSIGNED NULL",
+          "scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "target_permission JSON NOT NULL",
+          "state VARCHAR(20) NOT NULL",
+          "participant_plan JSON NOT NULL",
+          "retry_at DATETIME(6) NULL",
+          "last_error VARCHAR(64) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(revocation_id)",
+          "UNIQUE KEY auth_scope_epoch(scope_key,epoch)",
+          "INDEX auth_due(state,retry_at)"
+        ],
+        "checks": [
+          "CHECK (state IN ('PREPARING','FROZEN','FENCING','SUCCEEDED','REJECTED'))"
+        ]
+      },
+      {
+        "name": "authorization_ack",
+        "columns": [
+          "revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "participant VARCHAR(40) NOT NULL",
+          "scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "phase VARCHAR(24) NOT NULL",
+          "result_digest BINARY(32) NOT NULL",
+          "completed_at DATETIME(6) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(revocation_id,participant,scope_key)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "outbox",
+        "columns": [
+          "event_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "aggregate_kind VARCHAR(24) NOT NULL",
+          "aggregate_id BIGINT UNSIGNED NOT NULL",
+          "aggregate_seq BIGINT UNSIGNED NOT NULL",
+          "event_type VARCHAR(48) NOT NULL",
+          "schema_version VARCHAR(24) NOT NULL",
+          "payload JSON NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(event_id)",
+          "UNIQUE KEY event_order(aggregate_kind,aggregate_id,aggregate_seq)",
+          "INDEX event_created(created_at,event_id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "notification",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "recipient_id BIGINT UNSIGNED NOT NULL",
+          "event_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "kind VARCHAR(40) NOT NULL",
+          "target_json JSON NOT NULL",
+          "read_at DATETIME(6) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY notification_dedupe(recipient_id,event_id,kind)",
+          "INDEX notification_page(recipient_id,id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "audit_event",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "actor_id BIGINT UNSIGNED NULL",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "item_no INT UNSIGNED NOT NULL",
+          "kind VARCHAR(40) NOT NULL",
+          "target_json JSON NOT NULL",
+          "before_json JSON NULL",
+          "after_json JSON NULL",
+          "reason VARCHAR(2000) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY audit_operation(operation_id,item_no)",
+          "INDEX audit_actor(actor_id,id)"
+        ],
+        "checks": []
+      }
+    ],
+    "document_db": [
+      {
+        "name": "space",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "kind VARCHAR(16) NOT NULL",
+          "account_owner_id BIGINT UNSIGNED NULL",
+          "organization_id BIGINT UNSIGNED NULL",
+          "lifecycle VARCHAR(20) NOT NULL",
+          "quota_revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)"
+        ],
+        "checks": [
+          "CHECK (kind IN ('PERSONAL','ORGANIZATION'))",
+          "CHECK (lifecycle IN ('ACTIVE','CLOSING','PUBLIC_RETAINED','CLOSED'))",
+          "CHECK ((kind='PERSONAL' AND account_owner_id IS NOT NULL AND organization_id IS NULL) OR (kind='ORGANIZATION' AND organization_id IS NOT NULL AND account_owner_id IS NULL))"
+        ]
+      },
+      {
+        "name": "knowledge_base",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "space_id BIGINT UNSIGNED NOT NULL",
+          "name VARCHAR(160) NOT NULL",
+          "lifecycle VARCHAR(20) NOT NULL",
+          "visibility_policy VARCHAR(24) NOT NULL DEFAULT 'COLLABORATORS'",
+          "visibility_revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "acl_revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY kb_space(id,space_id)",
+          "INDEX kb_page(space_id,lifecycle,id)"
+        ],
+        "checks": [
+          "CHECK (lifecycle IN ('ACTIVE','CLOSING','PUBLIC_RETAINED','CLOSED'))",
+          "CHECK (visibility_policy IN ('PUBLIC','SPACE_MEMBERS','COLLABORATORS'))"
+        ]
+      },
+      {
+        "name": "knowledge_base_member",
+        "columns": [
+          "knowledge_base_id BIGINT UNSIGNED NOT NULL",
+          "user_id BIGINT UNSIGNED NOT NULL",
+          "role VARCHAR(24) NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(knowledge_base_id,user_id)",
+          "INDEX kb_member_user(user_id,state,knowledge_base_id)"
+        ],
+        "checks": [
+          "CHECK (role IN ('MEMBER','ADMIN'))",
+          "CHECK (state IN ('ACTIVE','REVOKING','CLOSED'))"
+        ]
+      },
+      {
+        "name": "knowledge_base_creation_grant",
+        "columns": [
+          "knowledge_base_id BIGINT UNSIGNED NOT NULL",
+          "user_id BIGINT UNSIGNED NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(knowledge_base_id,user_id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('ACTIVE','CLOSED'))"
+        ]
+      },
+      {
+        "name": "admin_retirement",
+        "columns": [
+          "knowledge_base_id BIGINT UNSIGNED NOT NULL",
+          "user_id BIGINT UNSIGNED NOT NULL",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(knowledge_base_id,user_id)",
+          "INDEX retirement_operation(operation_id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('RESERVED','APPLIED','CANCELLED'))"
+        ]
+      },
+      {
+        "name": "document",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "space_id BIGINT UNSIGNED NOT NULL",
+          "knowledge_base_id BIGINT UNSIGNED NULL",
+          "responsible_user_id BIGINT UNSIGNED NULL",
+          "title VARCHAR(240) NOT NULL",
+          "visibility_policy VARCHAR(24) NOT NULL DEFAULT 'COLLABORATORS'",
+          "visibility_revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "lifecycle VARCHAR(20) NOT NULL",
+          "main_locked BOOLEAN NOT NULL DEFAULT TRUE",
+          "current_structure_id BIGINT UNSIGNED NULL",
+          "current_style_id BIGINT UNSIGNED NULL",
+          "current_manifest_id BIGINT UNSIGNED NULL",
+          "current_release_id BIGINT UNSIGNED NULL",
+          "publication_state VARCHAR(16) NOT NULL",
+          "publication_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "control_revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "acl_revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "event_seq BIGINT UNSIGNED NOT NULL DEFAULT 0",
+          "deleted_at DATETIME(6) NULL",
+          "purge_after DATETIME(6) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY document_space(id,space_id)",
+          "INDEX document_kb(knowledge_base_id,lifecycle,id)",
+          "INDEX document_owner(responsible_user_id,lifecycle,id)",
+          "INDEX document_trash(lifecycle,purge_after,id)"
+        ],
+        "checks": [
+          "CHECK (lifecycle IN ('INITIALIZING','ACTIVE','TRASHED','CLOSING','PUBLIC_RETAINED','PURGED'))",
+          "CHECK (visibility_policy IN ('PUBLIC','SPACE_MEMBERS','COLLABORATORS'))",
+          "CHECK (publication_state IN ('UNPUBLISHED','PUBLISHED'))",
+          "CHECK ((publication_state='PUBLISHED' AND current_release_id IS NOT NULL) OR (publication_state='UNPUBLISHED' AND current_release_id IS NULL))"
+        ]
+      },
+      {
+        "name": "structure_revision",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "parent_id BIGINT UNSIGNED NULL",
+          "source_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "schema_version VARCHAR(24) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY structure_doc(id,document_id)",
+          "UNIQUE KEY structure_operation(document_id,source_operation_id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "style_revision",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "parent_id BIGINT UNSIGNED NULL",
+          "style_json JSON NOT NULL",
+          "schema_version VARCHAR(24) NOT NULL",
+          "source_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY style_doc(id,document_id)",
+          "UNIQUE KEY style_operation(document_id,source_operation_id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "chapter",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "created_structure_id BIGINT UNSIGNED NOT NULL",
+          "retired_structure_id BIGINT UNSIGNED NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY chapter_doc(id,document_id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "collaboration_unit",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "chapter_id BIGINT UNSIGNED NOT NULL",
+          "kind VARCHAR(16) NOT NULL",
+          "created_structure_id BIGINT UNSIGNED NOT NULL",
+          "retired_structure_id BIGINT UNSIGNED NULL",
+          "active_branch_id BIGINT UNSIGNED NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY unit_doc(id,document_id)",
+          "INDEX unit_chapter(chapter_id,id)"
+        ],
+        "checks": [
+          "CHECK (kind IN ('CHAPTER','INTRODUCTION','SECTION'))"
+        ]
+      },
+      {
+        "name": "structure_entry",
+        "columns": [
+          "structure_id BIGINT UNSIGNED NOT NULL",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "node_id BIGINT UNSIGNED NOT NULL",
+          "parent_node_id BIGINT UNSIGNED NULL",
+          "parent_sort_key BIGINT UNSIGNED GENERATED ALWAYS AS (COALESCE(parent_node_id,0)) STORED",
+          "chapter_id BIGINT UNSIGNED NOT NULL",
+          "kind VARCHAR(16) NOT NULL",
+          "title VARCHAR(240) NOT NULL",
+          "sort_order INT UNSIGNED NOT NULL",
+          "unit_id BIGINT UNSIGNED NULL",
+          "split_mode BOOLEAN NOT NULL DEFAULT FALSE",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(structure_id,node_id)",
+          "UNIQUE KEY structure_order(structure_id,parent_sort_key,sort_order)",
+          "UNIQUE KEY structure_unit(structure_id,unit_id)"
+        ],
+        "checks": [
+          "CHECK (kind IN ('CHAPTER','INTRODUCTION','SECTION'))"
+        ]
+      },
+      {
+        "name": "content_grant",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "user_id BIGINT UNSIGNED NOT NULL",
+          "scope_kind VARCHAR(16) NOT NULL",
+          "scope_id BIGINT UNSIGNED NOT NULL",
+          "capability VARCHAR(16) NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY content_grant_scope(document_id,user_id,scope_kind,scope_id,capability)",
+          "INDEX grant_user(user_id,document_id,state)"
+        ],
+        "checks": [
+          "CHECK (scope_kind IN ('DOCUMENT','CHAPTER','UNIT'))",
+          "CHECK (capability IN ('EDIT','REVIEW','COMMENT','MANAGE'))",
+          "CHECK (state IN ('ACTIVE','REVOKING','CLOSED'))",
+          "CHECK ((capability='EDIT') OR scope_kind='DOCUMENT')"
+        ]
+      },
+      {
+        "name": "content_version",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "unit_id BIGINT UNSIGNED NOT NULL",
+          "structure_id BIGINT UNSIGNED NOT NULL",
+          "body_json JSON NOT NULL",
+          "canonical_body LONGBLOB NOT NULL",
+          "body_hash BINARY(32) NOT NULL",
+          "schema_version VARCHAR(24) NOT NULL",
+          "canonicalization_version VARCHAR(24) NOT NULL",
+          "byte_size BIGINT UNSIGNED NOT NULL",
+          "source_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "source_kind VARCHAR(24) NOT NULL",
+          "source_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "provenance_json JSON NOT NULL",
+          "provenance_schema VARCHAR(24) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY version_doc(id,document_id)",
+          "UNIQUE KEY version_unit(id,unit_id,document_id)",
+          "UNIQUE KEY version_product(source_operation_id,source_kind,source_ref)",
+          "INDEX version_history(unit_id,id)"
+        ],
+        "checks": [
+          "CHECK (source_kind IN ('INITIAL','SUBMISSION','MERGE','MAIN_CAPTURE','STRUCTURE','RESTORE','REVERSE'))"
+        ]
+      },
+      {
+        "name": "main_manifest",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "parent_id BIGINT UNSIGNED NULL",
+          "structure_id BIGINT UNSIGNED NOT NULL",
+          "style_id BIGINT UNSIGNED NOT NULL",
+          "source_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "product_key VARCHAR(32) NOT NULL",
+          "reliable_cut_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY manifest_doc(id,document_id)",
+          "UNIQUE KEY manifest_product(document_id,source_operation_id,product_key)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "manifest_entry",
+        "columns": [
+          "manifest_id BIGINT UNSIGNED NOT NULL",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "unit_id BIGINT UNSIGNED NOT NULL",
+          "content_version_id BIGINT UNSIGNED NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(manifest_id,unit_id)",
+          "INDEX manifest_version(content_version_id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "branch",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "unit_id BIGINT UNSIGNED NOT NULL",
+          "lifecycle VARCHAR(16) NOT NULL",
+          "initial_base_version_id BIGINT UNSIGNED NOT NULL",
+          "current_lineage_id BIGINT UNSIGNED NULL",
+          "workspace_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY branch_unit(id,unit_id,document_id)",
+          "INDEX branch_history(unit_id,id)"
+        ],
+        "checks": [
+          "CHECK (lifecycle IN ('PREPARING','ACTIVE','RESTORING','RETIRED'))"
+        ]
+      },
+      {
+        "name": "branch_lineage",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "branch_id BIGINT UNSIGNED NOT NULL",
+          "unit_id BIGINT UNSIGNED NOT NULL",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "previous_id BIGINT UNSIGNED NULL",
+          "event_kind VARCHAR(24) NOT NULL",
+          "source_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "base_manifest_id BIGINT UNSIGNED NOT NULL",
+          "base_version_id BIGINT UNSIGNED NOT NULL",
+          "capture_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "provenance_json JSON NOT NULL",
+          "provenance_schema VARCHAR(24) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY lineage_branch(id,branch_id)",
+          "UNIQUE KEY lineage_operation(branch_id,source_operation_id,event_kind)"
+        ],
+        "checks": [
+          "CHECK (event_kind IN ('CREATED','PULL_MAIN','ACCEPTED_CUT','RESTORED','DISCARDED'))"
+        ]
+      },
+      {
+        "name": "unit_lineage",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "source_unit_id BIGINT UNSIGNED NOT NULL",
+          "target_unit_id BIGINT UNSIGNED NOT NULL",
+          "source_document_id BIGINT UNSIGNED NOT NULL",
+          "target_document_id BIGINT UNSIGNED NOT NULL",
+          "source_version_id BIGINT UNSIGNED NOT NULL",
+          "target_version_id BIGINT UNSIGNED NOT NULL",
+          "block_mapping JSON NOT NULL",
+          "mapping_schema VARCHAR(24) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY unit_mapping(operation_id,source_unit_id,target_unit_id)"
+        ],
+        "checks": [
+          "CHECK (source_document_id=target_document_id)"
+        ]
+      },
+      {
+        "name": "review_request",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "unit_id BIGINT UNSIGNED NOT NULL",
+          "branch_id BIGINT UNSIGNED NOT NULL",
+          "status VARCHAR(16) NOT NULL",
+          "current_round_id BIGINT UNSIGNED NULL",
+          "active_merge_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "archived_at DATETIME(6) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY request_unit(id,unit_id)",
+          "UNIQUE KEY request_doc(id,document_id)",
+          "INDEX request_list(document_id,status,id)",
+          "INDEX request_history(unit_id,id)"
+        ],
+        "checks": [
+          "CHECK (status IN ('REVIEWING','WITHDRAWN','MERGED'))",
+          "CHECK (archived_at IS NULL OR status='WITHDRAWN')"
+        ]
+      },
+      {
+        "name": "review_round",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "request_id BIGINT UNSIGNED NOT NULL",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "unit_id BIGINT UNSIGNED NOT NULL",
+          "round_no INT UNSIGNED NOT NULL",
+          "content_version_id BIGINT UNSIGNED NOT NULL",
+          "base_manifest_id BIGINT UNSIGNED NOT NULL",
+          "base_version_id BIGINT UNSIGNED NOT NULL",
+          "structure_id BIGINT UNSIGNED NOT NULL",
+          "lineage_id BIGINT UNSIGNED NOT NULL",
+          "capture_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "submitter_id BIGINT UNSIGNED NOT NULL",
+          "submission_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY round_request(id,request_id)",
+          "UNIQUE KEY round_number(request_id,round_no)",
+          "UNIQUE KEY round_submission(submission_operation_id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "request_submitter",
+        "columns": [
+          "request_id BIGINT UNSIGNED NOT NULL",
+          "user_id BIGINT UNSIGNED NOT NULL",
+          "first_round_id BIGINT UNSIGNED NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(request_id,user_id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "review_action",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "request_id BIGINT UNSIGNED NOT NULL",
+          "round_id BIGINT UNSIGNED NOT NULL",
+          "actor_id BIGINT UNSIGNED NOT NULL",
+          "kind VARCHAR(24) NOT NULL",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "item_no INT UNSIGNED NOT NULL",
+          "reason VARCHAR(2000) NULL",
+          "target_change_id BIGINT UNSIGNED NULL",
+          "content_version_id BIGINT UNSIGNED NULL",
+          "merge_record_id BIGINT UNSIGNED NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY action_operation(operation_id,item_no)",
+          "UNIQUE KEY action_request(id,request_id)",
+          "INDEX action_history(request_id,id)"
+        ],
+        "checks": [
+          "CHECK (kind IN ('REQUEST_CHANGES','RESOLVE_CHANGES','WITHDRAW','APPROVE_AND_MERGE','ARCHIVE'))",
+          "CHECK (kind<>'APPROVE_AND_MERGE' OR merge_record_id IS NOT NULL)",
+          "CHECK (kind NOT IN ('REQUEST_CHANGES','RESOLVE_CHANGES') OR (reason IS NOT NULL AND CHAR_LENGTH(reason)>0))"
+        ]
+      },
+      {
+        "name": "change_request",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "request_id BIGINT UNSIGNED NOT NULL",
+          "origin_round_id BIGINT UNSIGNED NOT NULL",
+          "created_action_id BIGINT UNSIGNED NOT NULL",
+          "author_id BIGINT UNSIGNED NOT NULL",
+          "status VARCHAR(16) NOT NULL",
+          "resolved_action_id BIGINT UNSIGNED NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY change_request_scope(id,request_id)",
+          "INDEX changes_open(request_id,status,id)"
+        ],
+        "checks": [
+          "CHECK (status IN ('OPEN','RESOLVED'))",
+          "CHECK ((status='OPEN' AND resolved_action_id IS NULL) OR (status='RESOLVED' AND resolved_action_id IS NOT NULL))"
+        ]
+      },
+      {
+        "name": "unit_review_guard",
+        "columns": [
+          "unit_id BIGINT UNSIGNED NOT NULL",
+          "ongoing_request_id BIGINT UNSIGNED NULL",
+          "resumable_request_id BIGINT UNSIGNED NULL",
+          "submission_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(unit_id)"
+        ],
+        "checks": [
+          "CHECK (ongoing_request_id IS NULL OR resumable_request_id IS NULL)"
+        ]
+      },
+      {
+        "name": "operation_receipt",
+        "columns": [
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "actor_id BIGINT UNSIGNED NOT NULL",
+          "kind VARCHAR(40) NOT NULL",
+          "target_json JSON NOT NULL",
+          "request_fingerprint BINARY(32) NOT NULL",
+          "state VARCHAR(24) NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "identity_admission_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "result_json JSON NULL",
+          "expires_at DATETIME(6) NOT NULL",
+          "terminal_at DATETIME(6) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(operation_id)",
+          "INDEX operation_actor(actor_id,created_at,operation_id)",
+          "INDEX operation_due(state,expires_at)"
+        ],
+        "checks": [
+          "CHECK (state IN ('PREPARING','SUCCEEDED','REJECTED','CANCELLED'))"
+        ]
+      },
+      {
+        "name": "submission_operation",
+        "columns": [
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "actor_id BIGINT UNSIGNED NOT NULL",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "unit_id BIGINT UNSIGNED NOT NULL",
+          "branch_id BIGINT UNSIGNED NOT NULL",
+          "request_id BIGINT UNSIGNED NULL",
+          "expected_round_id BIGINT UNSIGNED NULL",
+          "state VARCHAR(16) NOT NULL",
+          "guard_generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "capture_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "flush_receipt_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "lineage_id BIGINT UNSIGNED NOT NULL",
+          "result_round_id BIGINT UNSIGNED NULL",
+          "retry_at DATETIME(6) NULL",
+          "last_error VARCHAR(64) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(operation_id)",
+          "UNIQUE KEY submission_unit(operation_id,unit_id)",
+          "INDEX submission_due(state,retry_at)"
+        ],
+        "checks": [
+          "CHECK (state IN ('PREPARING','CAPTURED','SUCCEEDED','REJECTED'))"
+        ]
+      },
+      {
+        "name": "merge_operation",
+        "columns": [
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "actor_id BIGINT UNSIGNED NOT NULL",
+          "request_id BIGINT UNSIGNED NOT NULL",
+          "round_id BIGINT UNSIGNED NOT NULL",
+          "content_version_id BIGINT UNSIGNED NOT NULL",
+          "own_changes_to_resolve JSON NOT NULL",
+          "state VARCHAR(20) NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "result_merge_id BIGINT UNSIGNED NULL",
+          "retry_at DATETIME(6) NULL",
+          "last_error VARCHAR(64) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(operation_id)",
+          "UNIQUE KEY merge_operation_request(operation_id,request_id)",
+          "INDEX merge_due(state,retry_at)"
+        ],
+        "checks": [
+          "CHECK (state IN ('PREPARING','COMPUTING','PREPARED','SUCCEEDED','REJECTED','CANCELLED'))"
+        ]
+      },
+      {
+        "name": "merge_attempt",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "attempt_no INT UNSIGNED NOT NULL",
+          "base_version_id BIGINT UNSIGNED NOT NULL",
+          "submitted_version_id BIGINT UNSIGNED NOT NULL",
+          "main_manifest_id BIGINT UNSIGNED NOT NULL",
+          "main_cut_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "structure_id BIGINT UNSIGNED NOT NULL",
+          "style_id BIGINT UNSIGNED NOT NULL",
+          "lineage_id BIGINT UNSIGNED NOT NULL",
+          "candidate_version_id BIGINT UNSIGNED NULL",
+          "conflict_json JSON NULL",
+          "input_digest BINARY(32) NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY attempt_operation(id,operation_id)",
+          "UNIQUE KEY attempt_number(operation_id,attempt_no)"
+        ],
+        "checks": [
+          "CHECK (state IN ('FIXED','COMPUTED','CONFLICT','SUPERSEDED','COMMITTED'))"
+        ]
+      },
+      {
+        "name": "merge_record",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "request_id BIGINT UNSIGNED NOT NULL",
+          "round_id BIGINT UNSIGNED NOT NULL",
+          "attempt_id BIGINT UNSIGNED NOT NULL",
+          "approval_action_id BIGINT UNSIGNED NULL",
+          "input_manifest_id BIGINT UNSIGNED NOT NULL",
+          "output_manifest_id BIGINT UNSIGNED NOT NULL",
+          "result_version_id BIGINT UNSIGNED NOT NULL",
+          "accepted_capture_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "lineage_id BIGINT UNSIGNED NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY merged_operation(operation_id)",
+          "UNIQUE KEY merged_request(request_id)",
+          "UNIQUE KEY merge_record_request(id,request_id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "main_commit_barrier",
+        "columns": [
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "phase VARCHAR(16) NOT NULL",
+          "expected_cut JSON NULL",
+          "prepared_cut JSON NULL",
+          "target_manifest_id BIGINT UNSIGNED NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(document_id)"
+        ],
+        "checks": [
+          "CHECK (phase IN ('OPEN','PREPARING','PREPARED','INSTALLING','UNKNOWN'))"
+        ]
+      },
+      {
+        "name": "release",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "manifest_id BIGINT UNSIGNED NOT NULL",
+          "title VARCHAR(240) NOT NULL",
+          "publisher_id BIGINT UNSIGNED NOT NULL",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY release_doc(id,document_id)",
+          "UNIQUE KEY release_operation(operation_id)",
+          "INDEX release_history(document_id,id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "resource",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "space_id BIGINT UNSIGNED NOT NULL",
+          "uploader_id BIGINT UNSIGNED NULL",
+          "storage_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "checksum BINARY(32) NULL",
+          "byte_size BIGINT UNSIGNED NOT NULL",
+          "media_type VARCHAR(100) NOT NULL",
+          "state VARCHAR(20) NOT NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "upload_operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY resource_storage(storage_key)",
+          "UNIQUE KEY resource_upload(upload_operation_id)",
+          "INDEX resource_state(space_id,state,id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('UPLOADING','READY','DELETING','DELETED','UNKNOWN'))"
+        ]
+      },
+      {
+        "name": "resource_reference",
+        "columns": [
+          "resource_id BIGINT UNSIGNED NOT NULL",
+          "document_id BIGINT UNSIGNED NULL",
+          "owner_kind VARCHAR(24) NOT NULL",
+          "owner_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "purpose VARCHAR(24) NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(resource_id,owner_kind,owner_ref,purpose)",
+          "INDEX resource_owner(owner_kind,owner_ref)",
+          "INDEX resource_document(document_id,resource_id)"
+        ],
+        "checks": [
+          "CHECK (owner_kind IN ('DRAFT','VERSION','MANIFEST','RELEASE','CAPTURE','EXPORT','RETENTION','OPERATION'))"
+        ]
+      },
+      {
+        "name": "resource_protection",
+        "columns": [
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "room_id BIGINT UNSIGNED NOT NULL",
+          "grant_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "workspace_epoch BIGINT UNSIGNED NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "request_fingerprint BINARY(32) NOT NULL",
+          "resource_ids JSON NOT NULL",
+          "source_epochs JSON NOT NULL",
+          "state VARCHAR(20) NOT NULL",
+          "node_receipt_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "durable_seq BIGINT UNSIGNED NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(operation_id)",
+          "INDEX protection_room(document_id,room_id,state)"
+        ],
+        "checks": [
+          "CHECK (state IN ('PROTECTED','CONFIRMED','RELEASED','UNKNOWN'))"
+        ]
+      },
+      {
+        "name": "document_invitation",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "inviter_id BIGINT UNSIGNED NOT NULL",
+          "token_hash BINARY(32) NOT NULL",
+          "token_ciphertext VARBINARY(512) NOT NULL",
+          "token_key_id VARCHAR(64) NOT NULL",
+          "requested_grants JSON NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "expires_at DATETIME(6) NOT NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY doc_invitation_token(token_hash)",
+          "UNIQUE KEY doc_invitation_scope(id,document_id)",
+          "INDEX doc_invitation_page(document_id,state,id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('OPEN','CLOSED','EXPIRED'))"
+        ]
+      },
+      {
+        "name": "document_application",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "invitation_id BIGINT UNSIGNED NOT NULL",
+          "applicant_id BIGINT UNSIGNED NOT NULL",
+          "requested_grants JSON NOT NULL",
+          "invitation_valid_at_submit BOOLEAN NOT NULL",
+          "invitation_validated_at DATETIME(6) NOT NULL",
+          "reason VARCHAR(2000) NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "reviewer_id BIGINT UNSIGNED NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "INDEX doc_application_page(document_id,state,id)",
+          "INDEX doc_application_user(applicant_id,id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('PENDING','ACCEPTED','REJECTED','CANCELLED'))",
+          "CHECK (invitation_valid_at_submit=TRUE)"
+        ]
+      },
+      {
+        "name": "quota_account",
+        "columns": [
+          "space_id BIGINT UNSIGNED NOT NULL",
+          "limit_bytes BIGINT UNSIGNED NOT NULL",
+          "used_bytes BIGINT UNSIGNED NOT NULL",
+          "reserved_bytes BIGINT UNSIGNED NOT NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(space_id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "quota_reservation",
+        "columns": [
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "space_id BIGINT UNSIGNED NOT NULL",
+          "bytes BIGINT UNSIGNED NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "expires_at DATETIME(6) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(operation_id)",
+          "INDEX quota_expiry(state,expires_at)"
+        ],
+        "checks": [
+          "CHECK (state IN ('RESERVED','COMMITTED','RELEASED','UNKNOWN'))"
+        ]
+      },
+      {
+        "name": "temporary_budget",
+        "columns": [
+          "kind VARCHAR(24) NOT NULL",
+          "limit_bytes BIGINT UNSIGNED NOT NULL",
+          "reserved_bytes BIGINT UNSIGNED NOT NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(kind)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "comment_thread",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "context_kind VARCHAR(16) NOT NULL",
+          "context_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "content_version_id BIGINT UNSIGNED NULL",
+          "anchor_json JSON NOT NULL",
+          "anchor_schema VARCHAR(24) NOT NULL",
+          "author_id BIGINT UNSIGNED NOT NULL",
+          "status VARCHAR(16) NOT NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "INDEX comment_context(document_id,context_kind,context_ref,id)"
+        ],
+        "checks": [
+          "CHECK (context_kind IN ('MAIN','BRANCH','REVIEW'))",
+          "CHECK (status IN ('OPEN','RESOLVED','DELETED'))"
+        ]
+      },
+      {
+        "name": "comment",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "thread_id BIGINT UNSIGNED NOT NULL",
+          "author_id BIGINT UNSIGNED NOT NULL",
+          "reply_to_id BIGINT UNSIGNED NULL",
+          "body VARCHAR(8000) NOT NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "deleted_at DATETIME(6) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY comment_thread_scope(id,thread_id)",
+          "INDEX comment_page(thread_id,id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "export_job",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "requester_id BIGINT UNSIGNED NULL",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "manifest_id BIGINT UNSIGNED NOT NULL",
+          "release_id BIGINT UNSIGNED NULL",
+          "target_kind VARCHAR(16) NOT NULL",
+          "format VARCHAR(16) NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "artifact_resource_id BIGINT UNSIGNED NULL",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "retry_at DATETIME(6) NULL",
+          "last_error VARCHAR(64) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY export_operation(operation_id)",
+          "INDEX export_due(state,retry_at,id)"
+        ],
+        "checks": [
+          "CHECK (target_kind IN ('MAIN','PUBLIC'))",
+          "CHECK (format IN ('DOCX','MARKDOWN','PDF'))",
+          "CHECK (state IN ('QUEUED','RUNNING','SUCCEEDED','REJECTED','CANCELLED'))"
+        ]
+      },
+      {
+        "name": "lifecycle_operation",
+        "columns": [
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "actor_id BIGINT UNSIGNED NULL",
+          "kind VARCHAR(24) NOT NULL",
+          "state VARCHAR(24) NOT NULL",
+          "expected_revision BIGINT UNSIGNED NOT NULL",
+          "fixed_plan JSON NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "retry_at DATETIME(6) NULL",
+          "last_error VARCHAR(64) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(operation_id)",
+          "INDEX lifecycle_due(state,retry_at)"
+        ],
+        "checks": [
+          "CHECK (kind IN ('TRASH','RESTORE','PURGE','OWNER_CHANGE','ACCOUNT_CLOSE','ORGANIZATION_CLOSE'))",
+          "CHECK (state IN ('PREPARING','FROZEN','PLANNED','CLEANING','SUCCEEDED','REJECTED'))"
+        ]
+      },
+      {
+        "name": "read_view",
+        "columns": [
+          "view_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "manifest_id BIGINT UNSIGNED NOT NULL",
+          "admission_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "expires_at DATETIME(6) NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(view_id)",
+          "INDEX view_expiry(state,expires_at)"
+        ],
+        "checks": [
+          "CHECK (state IN ('OPEN','CLOSED'))"
+        ]
+      },
+      {
+        "name": "document_admission",
+        "columns": [
+          "admission_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "identity_admission_ref VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "actor_id BIGINT UNSIGNED NOT NULL",
+          "session_ref BINARY(32) NOT NULL",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "unit_id BIGINT UNSIGNED NULL",
+          "purpose VARCHAR(40) NOT NULL",
+          "capabilities JSON NOT NULL",
+          "target_json JSON NOT NULL",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "expires_at DATETIME(6) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(admission_id)",
+          "INDEX document_admission_operation(operation_id)",
+          "INDEX document_admission_actor(actor_id,state)"
+        ],
+        "checks": [
+          "CHECK (state IN ('OPEN','CLOSED'))"
+        ]
+      },
+      {
+        "name": "admission_source",
+        "columns": [
+          "admission_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(admission_id,scope_key)",
+          "INDEX source_reverse(scope_key,epoch,admission_id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "collaboration_ticket",
+        "columns": [
+          "token_hash BINARY(32) NOT NULL",
+          "admission_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "client_session_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "workspace_kind VARCHAR(16) NOT NULL",
+          "workspace_id BIGINT UNSIGNED NOT NULL",
+          "workspace_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "state VARCHAR(16) NOT NULL",
+          "expires_at DATETIME(6) NOT NULL",
+          "redeemed_grant_ref VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(token_hash)",
+          "INDEX ticket_expiry(state,expires_at)"
+        ],
+        "checks": [
+          "CHECK (workspace_kind IN ('MAIN','BRANCH'))",
+          "CHECK (state IN ('OPEN','REDEEMED','CLOSED'))"
+        ]
+      },
+      {
+        "name": "delivery_session",
+        "columns": [
+          "delivery_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "admission_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "publication_epoch BIGINT UNSIGNED NULL",
+          "release_id BIGINT UNSIGNED NULL",
+          "target_kind VARCHAR(24) NOT NULL",
+          "target_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "instance_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "handler_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "stop_reason VARCHAR(64) NULL",
+          "expires_at DATETIME(6) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(delivery_id)",
+          "INDEX delivery_close(document_id,state,publication_epoch)",
+          "INDEX delivery_instance(instance_id,state)"
+        ],
+        "checks": [
+          "CHECK (state IN ('OPEN','STOPPING','SETTLED','UNKNOWN'))",
+          "CHECK ((admission_id IS NOT NULL AND publication_epoch IS NULL) OR (admission_id IS NULL AND publication_epoch IS NOT NULL))"
+        ]
+      },
+      {
+        "name": "output_instance",
+        "columns": [
+          "instance_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "boot_digest BINARY(32) NOT NULL",
+          "pid BIGINT UNSIGNED NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "last_heartbeat_at DATETIME(6) NOT NULL",
+          "exit_proof_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(instance_id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('RUNNING','STOPPING','EXIT_CONFIRMED','UNKNOWN'))"
+        ]
+      },
+      {
+        "name": "access_gate",
+        "columns": [
+          "scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "max_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "state VARCHAR(16) NOT NULL",
+          "last_revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(scope_key)"
+        ],
+        "checks": [
+          "CHECK (state IN ('OPEN','BLOCKED'))"
+        ]
+      },
+      {
+        "name": "authorization_change",
+        "columns": [
+          "revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "actor_id BIGINT UNSIGNED NULL",
+          "scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "target_permission JSON NOT NULL",
+          "state VARCHAR(20) NOT NULL",
+          "participant_plan JSON NOT NULL",
+          "retry_at DATETIME(6) NULL",
+          "last_error VARCHAR(64) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(revocation_id)",
+          "UNIQUE KEY auth_scope_epoch(scope_key,epoch)",
+          "INDEX auth_due(state,retry_at)"
+        ],
+        "checks": [
+          "CHECK (state IN ('PREPARING','FROZEN','FENCING','SUCCEEDED','REJECTED'))"
+        ]
+      },
+      {
+        "name": "authorization_ack",
+        "columns": [
+          "revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "participant VARCHAR(40) NOT NULL",
+          "scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "phase VARCHAR(24) NOT NULL",
+          "result_digest BINARY(32) NOT NULL",
+          "completed_at DATETIME(6) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(revocation_id,participant,scope_key)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "durable_task",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "kind VARCHAR(40) NOT NULL",
+          "business_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "payload JSON NOT NULL",
+          "state VARCHAR(20) NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "instance_id VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "lease_until DATETIME(6) NULL",
+          "retry_at DATETIME(6) NOT NULL",
+          "attempts INT UNSIGNED NOT NULL DEFAULT 0",
+          "last_error VARCHAR(64) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY task_business(kind,business_key)",
+          "INDEX task_due(state,retry_at,id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('QUEUED','RUNNING','RETRY','SUCCEEDED','REJECTED','UNKNOWN'))"
+        ]
+      },
+      {
+        "name": "outbox",
+        "columns": [
+          "event_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "aggregate_kind VARCHAR(24) NOT NULL",
+          "aggregate_id BIGINT UNSIGNED NOT NULL",
+          "aggregate_seq BIGINT UNSIGNED NOT NULL",
+          "event_type VARCHAR(48) NOT NULL",
+          "schema_version VARCHAR(24) NOT NULL",
+          "payload JSON NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(event_id)",
+          "UNIQUE KEY event_order(aggregate_kind,aggregate_id,aggregate_seq)",
+          "INDEX event_created(created_at,event_id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "notification",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "recipient_id BIGINT UNSIGNED NOT NULL",
+          "event_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "kind VARCHAR(40) NOT NULL",
+          "target_json JSON NOT NULL",
+          "read_at DATETIME(6) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY notification_dedupe(recipient_id,event_id,kind)",
+          "INDEX notification_page(recipient_id,id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "audit_event",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "actor_id BIGINT UNSIGNED NULL",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "item_no INT UNSIGNED NOT NULL",
+          "kind VARCHAR(40) NOT NULL",
+          "target_json JSON NOT NULL",
+          "before_json JSON NULL",
+          "after_json JSON NULL",
+          "reason VARCHAR(2000) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY audit_operation(operation_id,item_no)",
+          "INDEX audit_actor(actor_id,id)"
+        ],
+        "checks": []
+      }
+    ],
+    "collaboration_db": [
+      {
+        "name": "room",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "unit_id BIGINT UNSIGNED NOT NULL",
+          "workspace_kind VARCHAR(16) NOT NULL",
+          "workspace_id BIGINT UNSIGNED NOT NULL",
+          "epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "last_durable_seq BIGINT UNSIGNED NOT NULL DEFAULT 0",
+          "checkpoint_id BIGINT UNSIGNED NULL",
+          "barrier_generation BIGINT UNSIGNED NOT NULL DEFAULT 0",
+          "state VARCHAR(16) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY room_epoch(id,epoch)",
+          "UNIQUE KEY room_workspace(workspace_kind,workspace_id,unit_id,epoch)",
+          "INDEX room_document(document_id,state,id)"
+        ],
+        "checks": [
+          "CHECK (workspace_kind IN ('MAIN','BRANCH'))",
+          "CHECK (state IN ('OPEN','BLOCKED','RETIRED'))"
+        ]
+      },
+      {
+        "name": "update_log",
+        "columns": [
+          "room_id BIGINT UNSIGNED NOT NULL",
+          "epoch BIGINT UNSIGNED NOT NULL",
+          "seq BIGINT UNSIGNED NOT NULL",
+          "client_session_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "client_update_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "payload LONGBLOB NOT NULL",
+          "payload_hash BINARY(32) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(room_id,epoch,seq)",
+          "UNIQUE KEY update_client(room_id,epoch,client_session_id,client_update_id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "checkpoint",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "room_id BIGINT UNSIGNED NOT NULL",
+          "epoch BIGINT UNSIGNED NOT NULL",
+          "covered_seq BIGINT UNSIGNED NOT NULL",
+          "yjs_state LONGBLOB NOT NULL",
+          "checksum BINARY(32) NOT NULL",
+          "format_version VARCHAR(24) NOT NULL",
+          "validated_at DATETIME(6) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY checkpoint_room(id,room_id,epoch)",
+          "INDEX checkpoint_cut(room_id,epoch,covered_seq)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "collaboration_grant",
+        "columns": [
+          "grant_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "document_admission_ref VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "actor_id BIGINT UNSIGNED NOT NULL",
+          "session_ref BINARY(32) NOT NULL",
+          "client_session_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "room_id BIGINT UNSIGNED NOT NULL",
+          "workspace_epoch BIGINT UNSIGNED NOT NULL",
+          "capabilities JSON NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "expires_at DATETIME(6) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(grant_id)",
+          "INDEX grant_actor(actor_id,state,grant_id)",
+          "INDEX grant_expiry(state,expires_at)"
+        ],
+        "checks": [
+          "CHECK (state IN ('OPEN','CLOSED'))"
+        ]
+      },
+      {
+        "name": "grant_source",
+        "columns": [
+          "grant_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(grant_id,scope_key)",
+          "INDEX grant_source_reverse(scope_key,epoch,grant_id)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "flush_receipt",
+        "columns": [
+          "receipt_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "grant_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "actor_id BIGINT UNSIGNED NOT NULL",
+          "room_id BIGINT UNSIGNED NOT NULL",
+          "epoch BIGINT UNSIGNED NOT NULL",
+          "covered_cut JSON NOT NULL",
+          "dependency_digest BINARY(32) NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(receipt_id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('FIXED','CLOSED'))"
+        ]
+      },
+      {
+        "name": "capture_operation",
+        "columns": [
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "request_fingerprint BINARY(32) NOT NULL",
+          "actor_id BIGINT UNSIGNED NOT NULL",
+          "room_id BIGINT UNSIGNED NOT NULL",
+          "epoch BIGINT UNSIGNED NOT NULL",
+          "cut_ref JSON NOT NULL",
+          "lineage_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "state VARCHAR(20) NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "candidate_json JSON NULL",
+          "canonical_body LONGBLOB NULL",
+          "body_hash BINARY(32) NULL",
+          "resource_refs JSON NOT NULL",
+          "go_result_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(operation_id)",
+          "INDEX capture_cleanup(state,operation_id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('CUT_FIXED','CAPTURED','BOUND','ABORTED','CLEANABLE','DELETED','UNKNOWN'))"
+        ]
+      },
+      {
+        "name": "main_barrier",
+        "columns": [
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "state VARCHAR(16) NOT NULL",
+          "cut_vector JSON NOT NULL",
+          "structure_ref BIGINT UNSIGNED NOT NULL",
+          "style_ref BIGINT UNSIGNED NOT NULL",
+          "installed_manifest_id BIGINT UNSIGNED NULL",
+          "go_result_digest BINARY(32) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(document_id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('PREPARING','PREPARED','INSTALLING','INSTALLED','ABORTED','UNKNOWN'))"
+        ]
+      },
+      {
+        "name": "install_receipt",
+        "columns": [
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "manifest_id BIGINT UNSIGNED NOT NULL",
+          "manifest_digest BINARY(32) NOT NULL",
+          "installed_epochs JSON NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(operation_id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('INSTALLED'))"
+        ]
+      },
+      {
+        "name": "delivery_session",
+        "columns": [
+          "delivery_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "grant_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "instance_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "handler_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "stop_reason VARCHAR(64) NULL",
+          "expires_at DATETIME(6) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(delivery_id)",
+          "INDEX collab_delivery_grant(grant_id,state)"
+        ],
+        "checks": [
+          "CHECK (state IN ('OPEN','STOPPING','SETTLED','UNKNOWN'))"
+        ]
+      },
+      {
+        "name": "access_gate",
+        "columns": [
+          "scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "max_epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "state VARCHAR(16) NOT NULL",
+          "last_revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(scope_key)"
+        ],
+        "checks": [
+          "CHECK (state IN ('OPEN','BLOCKED'))"
+        ]
+      },
+      {
+        "name": "authorization_change",
+        "columns": [
+          "revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "actor_id BIGINT UNSIGNED NULL",
+          "scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "target_permission JSON NOT NULL",
+          "state VARCHAR(20) NOT NULL",
+          "participant_plan JSON NOT NULL",
+          "retry_at DATETIME(6) NULL",
+          "last_error VARCHAR(64) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(revocation_id)",
+          "UNIQUE KEY auth_scope_epoch(scope_key,epoch)",
+          "INDEX auth_due(state,retry_at)"
+        ],
+        "checks": [
+          "CHECK (state IN ('PREPARING','FROZEN','FENCING','SUCCEEDED','REJECTED'))"
+        ]
+      },
+      {
+        "name": "authorization_ack",
+        "columns": [
+          "revocation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "participant VARCHAR(40) NOT NULL",
+          "scope_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "epoch BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "phase VARCHAR(24) NOT NULL",
+          "result_digest BINARY(32) NOT NULL",
+          "completed_at DATETIME(6) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(revocation_id,participant,scope_key)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "durable_task",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "kind VARCHAR(40) NOT NULL",
+          "business_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "payload JSON NOT NULL",
+          "state VARCHAR(20) NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "instance_id VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "lease_until DATETIME(6) NULL",
+          "retry_at DATETIME(6) NOT NULL",
+          "attempts INT UNSIGNED NOT NULL DEFAULT 0",
+          "last_error VARCHAR(64) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY task_business(kind,business_key)",
+          "INDEX task_due(state,retry_at,id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('QUEUED','RUNNING','RETRY','SUCCEEDED','REJECTED','UNKNOWN'))"
+        ]
+      }
+    ],
+    "search_db": [
+      {
+        "name": "consumed_event",
+        "columns": [
+          "consumer_name VARCHAR(40) NOT NULL",
+          "event_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "aggregate_seq BIGINT UNSIGNED NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "retry_at DATETIME(6) NULL",
+          "last_error VARCHAR(64) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(consumer_name,event_id)",
+          "INDEX consumed_due(state,retry_at)",
+          "INDEX consumed_order(document_id,aggregate_seq)"
+        ],
+        "checks": [
+          "CHECK (state IN ('RECEIVED','APPLYING','SUCCEEDED','RETRY','REJECTED'))"
+        ]
+      },
+      {
+        "name": "document_index_revision",
+        "columns": [
+          "document_id BIGINT UNSIGNED NOT NULL",
+          "target_seq BIGINT UNSIGNED NOT NULL",
+          "applied_seq BIGINT UNSIGNED NOT NULL",
+          "release_id BIGINT UNSIGNED NULL",
+          "visibility VARCHAR(16) NOT NULL",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "physical_index VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(document_id)",
+          "INDEX index_progress(visibility,target_seq,document_id)"
+        ],
+        "checks": [
+          "CHECK (visibility IN ('PUBLIC','HIDDEN'))",
+          "CHECK (applied_seq<=target_seq)"
+        ]
+      },
+      {
+        "name": "rebuild_job",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "state VARCHAR(20) NOT NULL",
+          "snapshot_ref VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "watermark JSON NOT NULL",
+          "cursor_json JSON NULL",
+          "target_index VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "source_index VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "last_error VARCHAR(64) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "INDEX rebuild_state(state,id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('SNAPSHOT','REPLAYING','VALIDATING','SWITCHING','SUCCEEDED','REJECTED'))"
+        ]
+      },
+      {
+        "name": "index_generation",
+        "columns": [
+          "alias_name VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "physical_index VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "revision BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(alias_name)",
+          "UNIQUE KEY physical_alias(physical_index)"
+        ],
+        "checks": []
+      },
+      {
+        "name": "cursor_registry",
+        "columns": [
+          "cursor_hash BINARY(32) NOT NULL",
+          "pit_handle MEDIUMTEXT NOT NULL",
+          "physical_index VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "index_generation BIGINT UNSIGNED NOT NULL",
+          "scope_hash BINARY(32) NOT NULL",
+          "query_hash BINARY(32) NOT NULL",
+          "session_ref BINARY(32) NULL",
+          "last_sort JSON NULL",
+          "page_size SMALLINT UNSIGNED NOT NULL",
+          "expires_at DATETIME(6) NOT NULL",
+          "state VARCHAR(16) NOT NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(cursor_hash)",
+          "INDEX cursor_expiry(state,expires_at)"
+        ],
+        "checks": [
+          "CHECK (state IN ('OPEN','CLOSING','CLOSED'))",
+          "CHECK (page_size>=1 AND page_size<=100)"
+        ]
+      },
+      {
+        "name": "durable_task",
+        "columns": [
+          "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT",
+          "kind VARCHAR(40) NOT NULL",
+          "business_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
+          "operation_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "payload JSON NOT NULL",
+          "state VARCHAR(20) NOT NULL",
+          "generation BIGINT UNSIGNED NOT NULL DEFAULT 1",
+          "instance_id VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NULL",
+          "lease_until DATETIME(6) NULL",
+          "retry_at DATETIME(6) NOT NULL",
+          "attempts INT UNSIGNED NOT NULL DEFAULT 0",
+          "last_error VARCHAR(64) NULL",
+          "created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"
+        ],
+        "keys": [
+          "PRIMARY KEY(id)",
+          "UNIQUE KEY task_business(kind,business_key)",
+          "INDEX task_due(state,retry_at,id)"
+        ],
+        "checks": [
+          "CHECK (state IN ('QUEUED','RUNNING','RETRY','SUCCEEDED','REJECTED','UNKNOWN'))"
+        ]
+      }
+    ]
+  },
+  "foreignKeys": [
+    {
+      "db": "account_db",
+      "table": "session",
+      "columns": "user_id",
+      "parent": "user",
+      "parentColumns": "id"
+    },
+    {
+      "db": "account_db",
+      "table": "organization",
+      "columns": "owner_id",
+      "parent": "user",
+      "parentColumns": "id"
+    },
+    {
+      "db": "account_db",
+      "table": "organization_member",
+      "columns": "organization_id",
+      "parent": "organization",
+      "parentColumns": "id"
+    },
+    {
+      "db": "account_db",
+      "table": "organization_member",
+      "columns": "user_id",
+      "parent": "user",
+      "parentColumns": "id"
+    },
+    {
+      "db": "account_db",
+      "table": "organization_invitation",
+      "columns": "organization_id",
+      "parent": "organization",
+      "parentColumns": "id"
+    },
+    {
+      "db": "account_db",
+      "table": "organization_application",
+      "columns": "organization_id",
+      "parent": "organization",
+      "parentColumns": "id"
+    },
+    {
+      "db": "account_db",
+      "table": "organization_application",
+      "columns": "applicant_id",
+      "parent": "user",
+      "parentColumns": "id"
+    },
+    {
+      "db": "account_db",
+      "table": "organization_application",
+      "columns": "source_invitation_id,organization_id",
+      "parent": "organization_invitation",
+      "parentColumns": "id,organization_id"
+    },
+    {
+      "db": "account_db",
+      "table": "organization_creation_grant",
+      "columns": "organization_id,user_id",
+      "parent": "organization_member",
+      "parentColumns": "organization_id,user_id"
+    },
+    {
+      "db": "account_db",
+      "table": "identity_admission",
+      "columns": "actor_id",
+      "parent": "user",
+      "parentColumns": "id"
+    },
+    {
+      "db": "account_db",
+      "table": "identity_admission",
+      "columns": "session_id",
+      "parent": "session",
+      "parentColumns": "id"
+    },
+    {
+      "db": "account_db",
+      "table": "admission_source",
+      "columns": "admission_id",
+      "parent": "identity_admission",
+      "parentColumns": "admission_id"
+    },
+    {
+      "db": "account_db",
+      "table": "account_close",
+      "columns": "user_id",
+      "parent": "user",
+      "parentColumns": "id"
+    },
+    {
+      "db": "account_db",
+      "table": "organization_transition",
+      "columns": "organization_id",
+      "parent": "organization",
+      "parentColumns": "id"
+    },
+    {
+      "db": "account_db",
+      "table": "authorization_ack",
+      "columns": "revocation_id",
+      "parent": "authorization_change",
+      "parentColumns": "revocation_id"
+    },
+    {
+      "db": "document_db",
+      "table": "knowledge_base",
+      "columns": "space_id",
+      "parent": "space",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "knowledge_base_member",
+      "columns": "knowledge_base_id",
+      "parent": "knowledge_base",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "knowledge_base_creation_grant",
+      "columns": "knowledge_base_id",
+      "parent": "knowledge_base",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "admin_retirement",
+      "columns": "knowledge_base_id,user_id",
+      "parent": "knowledge_base_member",
+      "parentColumns": "knowledge_base_id,user_id"
+    },
+    {
+      "db": "document_db",
+      "table": "document",
+      "columns": "space_id",
+      "parent": "space",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "document",
+      "columns": "knowledge_base_id,space_id",
+      "parent": "knowledge_base",
+      "parentColumns": "id,space_id"
+    },
+    {
+      "db": "document_db",
+      "table": "structure_revision",
+      "columns": "document_id",
+      "parent": "document",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "structure_revision",
+      "columns": "parent_id,document_id",
+      "parent": "structure_revision",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "style_revision",
+      "columns": "document_id",
+      "parent": "document",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "style_revision",
+      "columns": "parent_id,document_id",
+      "parent": "style_revision",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "chapter",
+      "columns": "created_structure_id,document_id",
+      "parent": "structure_revision",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "chapter",
+      "columns": "retired_structure_id,document_id",
+      "parent": "structure_revision",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "collaboration_unit",
+      "columns": "chapter_id,document_id",
+      "parent": "chapter",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "collaboration_unit",
+      "columns": "created_structure_id,document_id",
+      "parent": "structure_revision",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "collaboration_unit",
+      "columns": "retired_structure_id,document_id",
+      "parent": "structure_revision",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "structure_entry",
+      "columns": "structure_id,document_id",
+      "parent": "structure_revision",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "structure_entry",
+      "columns": "chapter_id,document_id",
+      "parent": "chapter",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "structure_entry",
+      "columns": "unit_id,document_id",
+      "parent": "collaboration_unit",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "structure_entry",
+      "columns": "structure_id,parent_node_id",
+      "parent": "structure_entry",
+      "parentColumns": "structure_id,node_id"
+    },
+    {
+      "db": "document_db",
+      "table": "content_grant",
+      "columns": "document_id",
+      "parent": "document",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "content_version",
+      "columns": "unit_id,document_id",
+      "parent": "collaboration_unit",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "content_version",
+      "columns": "structure_id,document_id",
+      "parent": "structure_revision",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "main_manifest",
+      "columns": "structure_id,document_id",
+      "parent": "structure_revision",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "main_manifest",
+      "columns": "style_id,document_id",
+      "parent": "style_revision",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "main_manifest",
+      "columns": "parent_id,document_id",
+      "parent": "main_manifest",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "manifest_entry",
+      "columns": "manifest_id,document_id",
+      "parent": "main_manifest",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "manifest_entry",
+      "columns": "content_version_id,unit_id,document_id",
+      "parent": "content_version",
+      "parentColumns": "id,unit_id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "branch",
+      "columns": "unit_id,document_id",
+      "parent": "collaboration_unit",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "branch",
+      "columns": "initial_base_version_id,unit_id,document_id",
+      "parent": "content_version",
+      "parentColumns": "id,unit_id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "collaboration_unit",
+      "columns": "active_branch_id,id,document_id",
+      "parent": "branch",
+      "parentColumns": "id,unit_id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "branch_lineage",
+      "columns": "branch_id,unit_id,document_id",
+      "parent": "branch",
+      "parentColumns": "id,unit_id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "branch_lineage",
+      "columns": "base_manifest_id,document_id",
+      "parent": "main_manifest",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "branch_lineage",
+      "columns": "base_version_id,unit_id,document_id",
+      "parent": "content_version",
+      "parentColumns": "id,unit_id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "branch_lineage",
+      "columns": "previous_id,branch_id",
+      "parent": "branch_lineage",
+      "parentColumns": "id,branch_id"
+    },
+    {
+      "db": "document_db",
+      "table": "branch",
+      "columns": "current_lineage_id,id",
+      "parent": "branch_lineage",
+      "parentColumns": "id,branch_id"
+    },
+    {
+      "db": "document_db",
+      "table": "unit_lineage",
+      "columns": "source_version_id,source_unit_id,source_document_id",
+      "parent": "content_version",
+      "parentColumns": "id,unit_id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "unit_lineage",
+      "columns": "target_version_id,target_unit_id,target_document_id",
+      "parent": "content_version",
+      "parentColumns": "id,unit_id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "review_request",
+      "columns": "branch_id,unit_id,document_id",
+      "parent": "branch",
+      "parentColumns": "id,unit_id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "review_round",
+      "columns": "request_id,unit_id",
+      "parent": "review_request",
+      "parentColumns": "id,unit_id"
+    },
+    {
+      "db": "document_db",
+      "table": "review_round",
+      "columns": "request_id,document_id",
+      "parent": "review_request",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "review_round",
+      "columns": "content_version_id,unit_id,document_id",
+      "parent": "content_version",
+      "parentColumns": "id,unit_id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "review_round",
+      "columns": "base_version_id,unit_id,document_id",
+      "parent": "content_version",
+      "parentColumns": "id,unit_id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "review_round",
+      "columns": "base_manifest_id,document_id",
+      "parent": "main_manifest",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "review_round",
+      "columns": "structure_id,document_id",
+      "parent": "structure_revision",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "review_request",
+      "columns": "current_round_id,id",
+      "parent": "review_round",
+      "parentColumns": "id,request_id"
+    },
+    {
+      "db": "document_db",
+      "table": "request_submitter",
+      "columns": "first_round_id,request_id",
+      "parent": "review_round",
+      "parentColumns": "id,request_id"
+    },
+    {
+      "db": "document_db",
+      "table": "review_action",
+      "columns": "round_id,request_id",
+      "parent": "review_round",
+      "parentColumns": "id,request_id"
+    },
+    {
+      "db": "document_db",
+      "table": "change_request",
+      "columns": "origin_round_id,request_id",
+      "parent": "review_round",
+      "parentColumns": "id,request_id"
+    },
+    {
+      "db": "document_db",
+      "table": "change_request",
+      "columns": "created_action_id,request_id",
+      "parent": "review_action",
+      "parentColumns": "id,request_id"
+    },
+    {
+      "db": "document_db",
+      "table": "change_request",
+      "columns": "resolved_action_id,request_id",
+      "parent": "review_action",
+      "parentColumns": "id,request_id"
+    },
+    {
+      "db": "document_db",
+      "table": "review_action",
+      "columns": "target_change_id,request_id",
+      "parent": "change_request",
+      "parentColumns": "id,request_id"
+    },
+    {
+      "db": "document_db",
+      "table": "unit_review_guard",
+      "columns": "unit_id",
+      "parent": "collaboration_unit",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "unit_review_guard",
+      "columns": "ongoing_request_id,unit_id",
+      "parent": "review_request",
+      "parentColumns": "id,unit_id"
+    },
+    {
+      "db": "document_db",
+      "table": "unit_review_guard",
+      "columns": "resumable_request_id,unit_id",
+      "parent": "review_request",
+      "parentColumns": "id,unit_id"
+    },
+    {
+      "db": "document_db",
+      "table": "submission_operation",
+      "columns": "operation_id",
+      "parent": "operation_receipt",
+      "parentColumns": "operation_id"
+    },
+    {
+      "db": "document_db",
+      "table": "submission_operation",
+      "columns": "branch_id,unit_id,document_id",
+      "parent": "branch",
+      "parentColumns": "id,unit_id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "submission_operation",
+      "columns": "expected_round_id,request_id",
+      "parent": "review_round",
+      "parentColumns": "id,request_id"
+    },
+    {
+      "db": "document_db",
+      "table": "submission_operation",
+      "columns": "result_round_id,request_id",
+      "parent": "review_round",
+      "parentColumns": "id,request_id"
+    },
+    {
+      "db": "document_db",
+      "table": "unit_review_guard",
+      "columns": "submission_operation_id,unit_id",
+      "parent": "submission_operation",
+      "parentColumns": "operation_id,unit_id"
+    },
+    {
+      "db": "document_db",
+      "table": "review_round",
+      "columns": "submission_operation_id",
+      "parent": "submission_operation",
+      "parentColumns": "operation_id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_operation",
+      "columns": "operation_id",
+      "parent": "operation_receipt",
+      "parentColumns": "operation_id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_operation",
+      "columns": "round_id,request_id",
+      "parent": "review_round",
+      "parentColumns": "id,request_id"
+    },
+    {
+      "db": "document_db",
+      "table": "review_request",
+      "columns": "active_merge_operation_id,id",
+      "parent": "merge_operation",
+      "parentColumns": "operation_id,request_id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_attempt",
+      "columns": "operation_id",
+      "parent": "merge_operation",
+      "parentColumns": "operation_id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_record",
+      "columns": "round_id,request_id",
+      "parent": "review_round",
+      "parentColumns": "id,request_id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_record",
+      "columns": "attempt_id,operation_id",
+      "parent": "merge_attempt",
+      "parentColumns": "id,operation_id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_record",
+      "columns": "approval_action_id,request_id",
+      "parent": "review_action",
+      "parentColumns": "id,request_id"
+    },
+    {
+      "db": "document_db",
+      "table": "review_action",
+      "columns": "merge_record_id,request_id",
+      "parent": "merge_record",
+      "parentColumns": "id,request_id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_operation",
+      "columns": "result_merge_id,request_id",
+      "parent": "merge_record",
+      "parentColumns": "id,request_id"
+    },
+    {
+      "db": "document_db",
+      "table": "main_commit_barrier",
+      "columns": "document_id",
+      "parent": "document",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "main_commit_barrier",
+      "columns": "target_manifest_id,document_id",
+      "parent": "main_manifest",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "release",
+      "columns": "manifest_id,document_id",
+      "parent": "main_manifest",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "document",
+      "columns": "current_structure_id,id",
+      "parent": "structure_revision",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "document",
+      "columns": "current_style_id,id",
+      "parent": "style_revision",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "document",
+      "columns": "current_manifest_id,id",
+      "parent": "main_manifest",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "document",
+      "columns": "current_release_id,id",
+      "parent": "release",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "resource",
+      "columns": "space_id",
+      "parent": "space",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "resource_reference",
+      "columns": "resource_id",
+      "parent": "resource",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "resource_reference",
+      "columns": "document_id",
+      "parent": "document",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "resource_protection",
+      "columns": "document_id",
+      "parent": "document",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "document_invitation",
+      "columns": "document_id",
+      "parent": "document",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "document_application",
+      "columns": "invitation_id,document_id",
+      "parent": "document_invitation",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "quota_account",
+      "columns": "space_id",
+      "parent": "space",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "quota_reservation",
+      "columns": "space_id",
+      "parent": "quota_account",
+      "parentColumns": "space_id"
+    },
+    {
+      "db": "document_db",
+      "table": "comment_thread",
+      "columns": "document_id",
+      "parent": "document",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "comment_thread",
+      "columns": "content_version_id,document_id",
+      "parent": "content_version",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "comment",
+      "columns": "thread_id",
+      "parent": "comment_thread",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "comment",
+      "columns": "reply_to_id,thread_id",
+      "parent": "comment",
+      "parentColumns": "id,thread_id"
+    },
+    {
+      "db": "document_db",
+      "table": "export_job",
+      "columns": "manifest_id,document_id",
+      "parent": "main_manifest",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "export_job",
+      "columns": "release_id,document_id",
+      "parent": "release",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "export_job",
+      "columns": "artifact_resource_id",
+      "parent": "resource",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "read_view",
+      "columns": "manifest_id,document_id",
+      "parent": "main_manifest",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "document_admission",
+      "columns": "document_id",
+      "parent": "document",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "document_admission",
+      "columns": "unit_id,document_id",
+      "parent": "collaboration_unit",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "read_view",
+      "columns": "admission_id",
+      "parent": "document_admission",
+      "parentColumns": "admission_id"
+    },
+    {
+      "db": "document_db",
+      "table": "admission_source",
+      "columns": "admission_id",
+      "parent": "document_admission",
+      "parentColumns": "admission_id"
+    },
+    {
+      "db": "document_db",
+      "table": "collaboration_ticket",
+      "columns": "admission_id",
+      "parent": "document_admission",
+      "parentColumns": "admission_id"
+    },
+    {
+      "db": "document_db",
+      "table": "delivery_session",
+      "columns": "admission_id",
+      "parent": "document_admission",
+      "parentColumns": "admission_id"
+    },
+    {
+      "db": "document_db",
+      "table": "delivery_session",
+      "columns": "release_id,document_id",
+      "parent": "release",
+      "parentColumns": "id,document_id"
+    },
+    {
+      "db": "document_db",
+      "table": "delivery_session",
+      "columns": "instance_id",
+      "parent": "output_instance",
+      "parentColumns": "instance_id"
+    },
+    {
+      "db": "document_db",
+      "table": "authorization_ack",
+      "columns": "revocation_id",
+      "parent": "authorization_change",
+      "parentColumns": "revocation_id"
+    },
+    {
+      "db": "collaboration_db",
+      "table": "update_log",
+      "columns": "room_id,epoch",
+      "parent": "room",
+      "parentColumns": "id,epoch"
+    },
+    {
+      "db": "collaboration_db",
+      "table": "checkpoint",
+      "columns": "room_id,epoch",
+      "parent": "room",
+      "parentColumns": "id,epoch"
+    },
+    {
+      "db": "collaboration_db",
+      "table": "room",
+      "columns": "checkpoint_id,id,epoch",
+      "parent": "checkpoint",
+      "parentColumns": "id,room_id,epoch"
+    },
+    {
+      "db": "collaboration_db",
+      "table": "collaboration_grant",
+      "columns": "room_id,workspace_epoch",
+      "parent": "room",
+      "parentColumns": "id,epoch"
+    },
+    {
+      "db": "collaboration_db",
+      "table": "grant_source",
+      "columns": "grant_id",
+      "parent": "collaboration_grant",
+      "parentColumns": "grant_id"
+    },
+    {
+      "db": "collaboration_db",
+      "table": "flush_receipt",
+      "columns": "grant_id",
+      "parent": "collaboration_grant",
+      "parentColumns": "grant_id"
+    },
+    {
+      "db": "collaboration_db",
+      "table": "flush_receipt",
+      "columns": "room_id,epoch",
+      "parent": "room",
+      "parentColumns": "id,epoch"
+    },
+    {
+      "db": "collaboration_db",
+      "table": "capture_operation",
+      "columns": "room_id,epoch",
+      "parent": "room",
+      "parentColumns": "id,epoch"
+    },
+    {
+      "db": "collaboration_db",
+      "table": "delivery_session",
+      "columns": "grant_id",
+      "parent": "collaboration_grant",
+      "parentColumns": "grant_id"
+    },
+    {
+      "db": "collaboration_db",
+      "table": "authorization_ack",
+      "columns": "revocation_id",
+      "parent": "authorization_change",
+      "parentColumns": "revocation_id"
+    },
+    {
+      "db": "document_db",
+      "table": "review_round",
+      "columns": "lineage_id",
+      "parent": "branch_lineage",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "review_action",
+      "columns": "content_version_id",
+      "parent": "content_version",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "submission_operation",
+      "columns": "lineage_id",
+      "parent": "branch_lineage",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_operation",
+      "columns": "content_version_id",
+      "parent": "content_version",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_attempt",
+      "columns": "base_version_id",
+      "parent": "content_version",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_attempt",
+      "columns": "submitted_version_id",
+      "parent": "content_version",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_attempt",
+      "columns": "main_manifest_id",
+      "parent": "main_manifest",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_attempt",
+      "columns": "structure_id",
+      "parent": "structure_revision",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_attempt",
+      "columns": "style_id",
+      "parent": "style_revision",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_attempt",
+      "columns": "lineage_id",
+      "parent": "branch_lineage",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_attempt",
+      "columns": "candidate_version_id",
+      "parent": "content_version",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_record",
+      "columns": "input_manifest_id",
+      "parent": "main_manifest",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_record",
+      "columns": "output_manifest_id",
+      "parent": "main_manifest",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_record",
+      "columns": "result_version_id",
+      "parent": "content_version",
+      "parentColumns": "id"
+    },
+    {
+      "db": "document_db",
+      "table": "merge_record",
+      "columns": "lineage_id",
+      "parent": "branch_lineage",
+      "parentColumns": "id"
+    },
+    {
+      "db": "account_db",
+      "table": "admission_source",
+      "columns": "scope_key",
+      "parent": "access_gate",
+      "parentColumns": "scope_key"
+    },
+    {
+      "db": "document_db",
+      "table": "admission_source",
+      "columns": "scope_key",
+      "parent": "access_gate",
+      "parentColumns": "scope_key"
+    },
+    {
+      "db": "collaboration_db",
+      "table": "grant_source",
+      "columns": "scope_key",
+      "parent": "access_gate",
+      "parentColumns": "scope_key"
+    }
+  ]
+}

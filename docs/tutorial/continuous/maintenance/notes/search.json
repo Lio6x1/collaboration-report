@@ -1,0 +1,2149 @@
+{
+  "files": {
+    "services/search/internal/domain/event/events_models.go": {
+      "purpose": "定义不可变outbox事件、Kafka位置/记录/保留窗口，并提供拒绝重复键的JSON解码。",
+      "why": "事件身份来自Doc原行，投递批次和当前Doc快照都不能改写它；Kafka offset与业务uint64序号也不能混用。",
+      "flow": [
+        "decodeStrict先递归检查JSON重复键、最大16层和完整结束，再DisallowUnknownFields解码",
+        "Event保存规范原行及RawDigest",
+        "Position描述传输topic/partition/offset，Record携带Value",
+        "PartitionCount固定3属于日志身份协议"
+      ],
+      "pitfalls": [
+        "重复JSON键不能采用后值覆盖",
+        "扩分区需要协议与checkpoint迁移，不是改常量扩容"
+      ],
+      "symbols": {
+        "Event": {
+          "why": "保存能够重新核验的原业务事件，而不是ES当前投影。",
+          "steps": [],
+          "fields": {
+            "ID": "outbox event_id，消费者幂等键",
+            "Type": "发布/撤下/可见性改变的事件类型",
+            "Document": "受影响文档ID",
+            "Sequence": "原事件文档聚合序号，Doc当前快照至少达到它",
+            "Release": "原事件发布引用，撤下事件为0",
+            "PublicationEpoch": "原事件公开发布代次",
+            "OccurredAt": "payload中的UTC业务发生时间",
+            "RawDigest": "规范原outbox行SHA-256，不是当前正文摘要",
+            "Original": "可由RestoreEvent重新解析的规范原行字节"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Position": {
+          "why": "一条Kafka记录的物理位置。",
+          "steps": [],
+          "fields": {
+            "Topic": "冻结消费主题名称",
+            "Partition": "固定0/1/2分区编号",
+            "Offset": "有符号非负记录offset，不是下一位置"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Record": {
+          "why": "把Kafka库对象转换为业务能校验的记录。",
+          "steps": [],
+          "fields": {
+            "Position": "完整主题/分区/offset",
+            "Value": "未经更改的Canal消息字节"
+          },
+          "params": {},
+          "results": {}
+        },
+        "PartitionWindow": {
+          "why": "比较保留窗口、SQL进度和broker组位置。",
+          "steps": [],
+          "fields": {
+            "First": "仍可读取的最早offset，包含端点",
+            "Last": "日志末尾下一offset，排他上界",
+            "Committed": "broker组已提交的下一offset；-1表示尚无提交"
+          },
+          "params": {},
+          "results": {}
+        }
+      },
+      "terms": {},
+      "source_sha256": "dfb0356f9fa43afeb0ec6fd685a6647c8adf9555d2e9c1647186a9787d8de12c"
+    },
+    "services/search/internal/domain/event/canal.go": {
+      "purpose": "严格解析Doc outbox INSERT Canal消息，绑定每行与payload并生成原事件摘要。",
+      "why": "Search只应由公开outbox引用驱动；误接私有表、DDL或宽松payload会制造假成功或泄漏数据。",
+      "flow": [
+        "ParseCanal限制2MiB UTF8、document_db.outbox、INSERT、主键event_id及1..1024行",
+        "parseRow要求八个原字段和八个payload字段，核重复身份、schema=1和允许事件类型",
+        "规范十进制uint64，发布必须release非空、撤下必须为空，时间必须UTC Z",
+        "规范序列化原行并hash，整条所有行解析成功才交调用者"
+      ],
+      "pitfalls": [
+        "Canal外层批次id/时间不是业务摘要的一部分",
+        "可见性改变可发生在未发布文档，不能据该事件推断匿名可读"
+      ],
+      "symbols": {
+        "ParseCanal": {
+          "why": "以整条Kafka记录为解析边界，禁止只处理合法前缀。",
+          "steps": [
+            "验证封包",
+            "逐行严格解析",
+            "全部成功才返回事件数组"
+          ],
+          "fields": {},
+          "params": {
+            "raw": "Kafka记录原始Value字节"
+          },
+          "results": {
+            "0": "按原data顺序的不可变事件列表",
+            "1": "稳定CANAL错误码；非nil时整条记录不得提交offset"
+          }
+        },
+        "payload": {
+          "why": "原outbox payload的严格线形契约。",
+          "steps": [],
+          "fields": {
+            "ID": "与外层event_id相同",
+            "Type": "与外层event_type相同",
+            "Schema": "固定字符串1",
+            "Document": "与aggregate_id相同的规范十进制文档ID",
+            "Sequence": "与aggregate_seq相同的规范十进制聚合序号",
+            "Release": "可为空发布ID，空值语义依事件类型",
+            "Epoch": "发布代次字符串",
+            "Occurred": "RFC3339Nano UTC业务时间"
+          },
+          "params": {},
+          "results": {}
+        }
+      },
+      "terms": {},
+      "source_sha256": "a2b60985098828a17d36e6839acf21e8145751f754cbaeeb5c0eac208cb09d51"
+    },
+    "services/search/internal/domain/index/projection_models.go": {
+      "purpose": "校验Doc当前正式快照，提取可检索纯文本并定义单调应用规则。",
+      "why": "旧事件只能提示“至少看到某序号”，不能决定读旧release；隐藏投影也需保留高水位防旧消息复活。",
+      "flow": [
+        "FromSnapshot核document/minimum、policy和固定正文/provenance字节hash，隐藏态严格无正文",
+        "ExtractChapter提取文本、公式和图片说明，资源集合必须恰好匹配，链接URL和内部ID不入摘要",
+        "ShouldApply拒绝同序不同权威摘要，旧序忽略，新序应用",
+        "Watermark将uint64格式为20位keyword供ES词典序比较"
+      ],
+      "pitfalls": [
+        "Visible表示可索引正式快照，不等于当前匿名浏览器有权限",
+        "不能物理删隐藏文档而丢水位",
+        "原事件RawDigest与Authority.Digest必须分别保存"
+      ],
+      "symbols": {
+        "Authority": {
+          "why": "Doc当前完整固定快照生成的索引权威。",
+          "steps": [],
+          "fields": {
+            "Document": "文档ID",
+            "Sequence": "当前Doc聚合水位，可能高于触发事件",
+            "Release": "当前正式发布ID；隐藏时0",
+            "PublicationEpoch": "当前发布权限代次",
+            "Structure": "正式正文结构版本ID",
+            "Visible": "当前是否具可索引正式正文，不代表匿名可读",
+            "Policy": "PUBLIC/SPACE_MEMBERS/COLLABORATORS策略",
+            "Title": "正式文档标题",
+            "Text": "从合法正文提取的全篇纯文本",
+            "Chapters": "按固定清单顺序保留单元定位文本",
+            "Digest": "完整确定性protobuf快照摘要，和原事件摘要独立"
+          },
+          "params": {},
+          "results": {}
+        },
+        "State": {
+          "why": "某物理索引对一个文档实际应用的水位。",
+          "steps": [],
+          "fields": {
+            "Sequence": "实际已应用聚合序号",
+            "Release": "实际正式发布ID或隐藏0",
+            "Visible": "实际投影可见状态",
+            "Policy": "实际可见性策略",
+            "Digest": "对应权威快照摘要",
+            "Revision": "SQL index_application乐观修订号"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Chapter": {
+          "why": "搜索摘要的章节定位信息。",
+          "steps": [],
+          "fields": {
+            "Unit": "正文单元ID，结果导航定位键",
+            "Title": "正文中首个标题提取文字",
+            "Text": "该单元可检索语义文本"
+          },
+          "params": {},
+          "results": {}
+        },
+        "FromSnapshot": {
+          "why": "只从已校验固定正式内容建立Authority。",
+          "steps": [
+            "核快照身份和水位",
+            "验证每单元正文/provenance",
+            "提纯文字并核资源",
+            "确定性protobuf序列化后散列"
+          ],
+          "fields": {},
+          "params": {
+            "validator": "共享content-v1/provenance-v1校验器",
+            "snapshot": "Doc经mTLS提供的当前快照",
+            "document": "期望文档ID",
+            "minimum": "触发事件要求至少达到的聚合序号"
+          },
+          "results": {
+            "0": "可送入ES的当前Authority",
+            "1": "非nil时不得造隐藏墓碑"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "866a39240a28867583a645690a24519ad0f13381a45e1f20b053564d6dae7e0a"
+    },
+    "services/search/internal/client/document/snapshot.go": {
+      "purpose": "以Search服务身份调用Doc GetPublicSnapshot并验证当前正式投影。",
+      "why": "Doc不可达与文档当前隐藏是两件事；只有明确合法的隐藏快照能清除索引正文。",
+      "flow": [
+        "NewSnapshots要求role=search并加载共享内容校验器",
+        "Current取Event的document/sequence/release查询提示",
+        "Snapshot每次mTLS DialPeer，设2.5秒期限及32MiB响应上限",
+        "成功调用FromSnapshot，任何RPC错误统一SEARCH_DOC_SNAPSHOT_UNKNOWN"
+      ],
+      "pitfalls": [
+        "NotFound也不能当删除",
+        "expected_release只是请求绑定提示，当前权威可以比原事件更新"
+      ],
+      "symbols": {
+        "Snapshots": {
+          "why": "封装Doc身份传输和共享正文校验依赖。",
+          "steps": [],
+          "fields": {
+            "configuration": "Search服务公开配置，供DialPeer加载运行凭据",
+            "validator": "共享正文/provenance schema校验器"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Snapshots.Snapshot": {
+          "why": "请求并认证当前事实，保持原事件只提供最低水位。",
+          "steps": [
+            "建立Doc客户端",
+            "有界调用GetPublicSnapshot",
+            "验证快照并返回Authority"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "父调用生命周期",
+            "document": "目标文档ID",
+            "minimum": "可接受的最小聚合序号",
+            "release": "原事件/快照项的发布引用提示"
+          },
+          "results": {
+            "0": "当前可信Authority",
+            "1": "未知或无效快照错误，禁止当隐藏"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "fcc9290355e4735f7bc532e642555e16db75d17d315af3aa374a7d0195c6655a"
+    },
+    "services/search/internal/client/elastic/client.go": {
+      "purpose": "验证ES端点/owner并统一有界HTTP请求与健康检查。",
+      "why": "ES连接和响应也可能超时/截断；不能把HTTP完成或部分JSON误认为投影已应用。",
+      "flow": [
+        "New限制端点scheme/host，无用户信息、路径查询片段，owner满足固定格式",
+        "request JSON编码限制64MiB，以context和5秒客户端期限发送",
+        "LimitReader读maximum+1区分真实超限/截断",
+        "Check要求health明确yellow/green且未timed_out"
+      ],
+      "pitfalls": [
+        "health只说明ES集群可用，不等于消费恢复或索引代次正确",
+        "不能打印原ES响应作为公开错误"
+      ],
+      "symbols": {
+        "Client": {
+          "why": "共享ES HTTP连接和索引归属身份。",
+          "steps": [],
+          "fields": {
+            "endpoint": "经过限制的ES根地址",
+            "owner": "本项目实例owner，用于mapping归属校验",
+            "http": "有5秒期限与连接池的HTTP客户端"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Client.request": {
+          "why": "执行一个有限预算ES JSON请求。",
+          "steps": [
+            "编码并限请求体",
+            "使用父context发送",
+            "限制响应字节并返回状态码/完整体"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "请求取消与上层期限",
+            "method": "HTTP方法",
+            "path": "经调用方验证的ES路径",
+            "value": "待JSON编码对象，nil表示无请求对象",
+            "maximum": "最大允许响应字节数"
+          },
+          "results": {
+            "0": "ES HTTP状态码",
+            "1": "完整有界响应字节",
+            "2": "传输/编码/截断稳定错误"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "78139b05ffaad78d699913dfec3fca968dbc3c300c11e435de0cab7a2f513644"
+    },
+    "services/search/internal/client/elastic/mapping_client.go": {
+      "purpose": "创建或核验本owner严格索引mapping，支持安全清理和完整计数核验。",
+      "why": "同名索引不一定属于本项目；重建不能覆盖未知索引，也不能把部分分片统计当完整。",
+      "flow": [
+        "properties把uint64字段映射keyword，chapters用object而非nested",
+        "verifyMapping严格比application/owner/schema/dynamic和全部字段",
+        "EnsureIndex先查再创建，创建不确定后重读同名归属",
+        "DeleteOwnedIndex只有已核owned且无alias才删除",
+        "RefreshCount先_refresh再_count，两步都要求所有分片成功"
+      ],
+      "pitfalls": [
+        "不能超时后删索引重建",
+        "隐藏墓碑也占一个ES文档，count核验必须包含",
+        "修改mapping版本需明确迁移，不可宽松接受旧schema"
+      ],
+      "symbols": {},
+      "terms": {},
+      "source_sha256": "a4aedeb75fc55a42c3b34c129cb0768f816da8f4c6bee73581d0078089685ffa"
+    },
+    "services/search/internal/client/elastic/projection_client.go": {
+      "purpose": "用原子脚本按uint64水位更新ES，并重读实际已应用状态。",
+      "why": "ES可能已经有更高事件或上次请求虽超时已成功；SQL必须记实际高水位而不是本次请求旧水位。",
+      "flow": [
+        "project核Authority，文档ID/seq/release转字符串，隐藏态输出空正文",
+        "applyScript以20位sequence_key比较，新序替换，同序不同digest报错，旧序noop",
+        "Apply成功或noop后getProjection重读元数据并核水位不低于请求",
+        "Get读取完整投影供重建全量核验，隐藏墓碑必须无title/text/chapters"
+      ],
+      "pitfalls": [
+        "不要使用ES long版本保存uint64序号",
+        "script成功不等于可直接写SQL请求水位",
+        "同序不同摘要是冲突，不能通过retry覆盖"
+      ],
+      "symbols": {
+        "projection": {
+          "why": "ES _source固定字段布局。",
+          "steps": [],
+          "fields": {
+            "Document": "十进制文档ID字符串",
+            "Sequence": "实际聚合序号字符串",
+            "Watermark": "20位补零序号，供脚本词典序比较",
+            "Release": "可空发布ID指针，隐藏为nil",
+            "Digest": "Authority摘要十六进制",
+            "Visible": "投影可见标记",
+            "Policy": "可见策略keyword",
+            "Title": "可见正式标题",
+            "Text": "可见全篇纯文本",
+            "Chapters": "可见章节定位文本数组"
+          },
+          "params": {},
+          "results": {}
+        },
+        "wireChapter": {
+          "why": "ES内以字符串保留完整uint64单元身份。",
+          "steps": [],
+          "fields": {
+            "Unit": "规范十进制unit_id",
+            "Title": "章节标题文字",
+            "Text": "章节可检索文字"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Client.Apply": {
+          "why": "跨ES/SQL恢复依赖的单调写入原语。",
+          "steps": [
+            "验证投影",
+            "脚本更新确定document ID",
+            "重读实际ES状态",
+            "拒绝水位回退或同序换摘要"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "父调用期限",
+            "physical": "已核owner的物理索引名",
+            "value": "Doc当前权威投影"
+          },
+          "results": {
+            "0": "ES实际存储水位，可高于value.Sequence",
+            "1": "未知/冲突错误；SQL不可先标成功"
+          }
+        },
+        "Client.getProjection": {
+          "params": {
+            "metadataOnly": "true只取文档、序号、正式版和权威摘要等元数据，响应上限1MiB；false取完整投影。元数据核验不能冒充正文已比对。"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "842d1f24112db78f4d0c5d403973f9fd2b421292fddb49d19813bc021d27d319"
+    },
+    "services/search/internal/client/kafka/client.go": {
+      "purpose": "封装只允许一条在途记录的Kafka组消费及同步提交。",
+      "why": "继续Fetch会越过失败记录，自动或批量提交可能把未落SQL的记录标成已消费。",
+      "flow": [
+        "New校验brokers/topic/group，reader用QueueCapacity1、CommitInterval0、FirstOffset",
+        "Fetch拒绝已有pending，核topic/partition/offset/大小，记录sha256身份",
+        "非法已取记录置blocked直到重启从未提交位置重读",
+        "Commit核位置及原字节摘要，5秒内同步CommitMessages，成功才清pending"
+      ],
+      "pitfalls": [
+        "禁止ReadMessage自动提交",
+        "提交超时保留pending原号重试，不可跳下一条",
+        "offset out of range明确WINDOW_LOST，不能自动跳最新"
+      ],
+      "symbols": {
+        "recordIdentity": {
+          "why": "约束Commit必须对应本次Fetch原记录。",
+          "steps": [],
+          "fields": {
+            "partition": "已取分区",
+            "offset": "已取记录位置",
+            "digest": "原Value SHA-256"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Client": {
+          "why": "一个消费组客户端的在途与阻断状态。",
+          "steps": [],
+          "fields": {
+            "configuration": "冻结的SearchConfig副本",
+            "api": "读取元数据/窗口/组位置的Kafka客户端",
+            "transport": "元数据连接生命周期",
+            "mu": "串行Fetch/Commit/Close",
+            "reader": "惰性创建的组Reader",
+            "pending": "唯一未确认记录身份",
+            "blocked": "已取非法记录后的固定失败，防越过",
+            "closed": "是否已关闭"
+          },
+          "params": {},
+          "results": {}
+        }
+      },
+      "terms": {},
+      "source_sha256": "c03601d9ea89b5bfcfda2a4fb327b469ab6fc619e149ca1e6e44f6d54d6dfdfe"
+    },
+    "services/search/internal/client/kafka/window.go": {
+      "purpose": "同时读取真实保留窗口和broker消费组已提交位置。",
+      "why": "SQL的下一offset必须仍可重读，broker位置不能领先SQL；连接成功不提供这两个证明。",
+      "flow": [
+        "Window限3秒，Metadata要求恰好分区0/1/2及有效leader",
+        "ListOffsets读取每分区First/Last",
+        "OffsetFetch读取group的Committed，核无重复/缺分区及不超过Last",
+        "返回完整partition→window映射"
+      ],
+      "pitfalls": [
+        "Last是排他末尾，Committed是下一位置",
+        "分区数量变化应拒绝，不可自动扩展数组继续旧协议"
+      ],
+      "symbols": {
+        "Client.Window": {
+          "why": "向消费者提供可核验的日志保留和提交前沿。",
+          "steps": [
+            "验证固定分区集合",
+            "读取最早/末尾offset",
+            "读取组提交位置并比较范围"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "调用预算"
+          },
+          "results": {
+            "0": "每个分区First/Last/Committed",
+            "1": "任一事实未知即失败"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "a265c93d5d234ac4cacad97fcd077d9061e43095bac6023e1a9b00bad435a268"
+    },
+    "services/search/internal/client/logsource/window.go": {
+      "purpose": "以Kafka ClusterID+TopicID捕获重建日志身份和固定分区窗口。",
+      "why": "同名主题被删除重建后offset可重复，名称不足以证明仍是原日志。",
+      "flow": [
+        "New锁定Metadata v10、ListOffsets v5、Fetch v13，禁止无TopicID协议降级",
+        "Capture先取identity，再取first/last，再取identity比较",
+        "expected非空时必须匹配原准备身份",
+        "checkedIdentity核集群/主题UUID及固定分区0/1/2"
+      ],
+      "pitfalls": [
+        "leader变化仅影响路由，不是持久身份变更",
+        "多个broker请求不是原子快照，因此明确前后身份校验，不宣称原子采样"
+      ],
+      "symbols": {
+        "Identity": {
+          "why": "不可替换的物理日志身份。",
+          "steps": [],
+          "fields": {
+            "Cluster": "Kafka集群ID",
+            "Topic": "主题名称",
+            "TopicID": "Kafka主题16字节UUID，同名重建必须不同"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Bounds": {
+          "why": "一个分区的保留区间。",
+          "steps": [],
+          "fields": {
+            "First": "当前最早保留offset，包含",
+            "Last": "当前末尾下一offset，排他"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Window": {
+          "why": "同一次身份核验期间观察的完整三分区窗口。",
+          "steps": [],
+          "fields": {
+            "Identity": "已经前后比对的日志身份",
+            "Partitions": "固定三个分区的First/Last边界"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Client.Capture": {
+          "why": "保持重建原日志身份，同时观察可用窗口。",
+          "steps": [
+            "身份前读",
+            "读取各分区First和Last",
+            "身份后读并比较",
+            "返回Window"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "父生命周期",
+            "expected": "原准备身份；首次捕获可nil，恢复必须传原值"
+          },
+          "results": {
+            "0": "完整身份与窗口",
+            "1": "身份变化/窗口不可用稳定错误"
+          }
+        },
+        "Client": {
+          "fields": {
+            "api": "复用的franz-go Kafka客户端，负责请求broker的分区窗口。",
+            "topic": "固定索引事件主题；查询窗口必须与消费/重建的主题一致。"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "0598306e0f4fabdf2581ea59e0efde955c8c2358b2b9a443fed4a4c4c3e7dedc"
+    },
+    "services/search/internal/client/logsource/records.go": {
+      "purpose": "严格解码Kafka RecordBatch，验证CRC、连续offset并限制解压和头数量。",
+      "why": "损坏尾部不能让合法前缀先推进持久checkpoint；压缩包必须在解压过程中限内存。",
+      "flow": [
+        "decodeRecords核magic2、CRC32C、批长度、连续offset与record数量，按[next,until)交付",
+        "先boundedRecordHeaders再kmsg解码，阻断短包声明巨量header分配",
+        "支持无压缩/gzip/snappy/lz4/zstd，累计最多8MiB",
+        "全部批/记录验证完成才返回；任何失败next还原原值"
+      ],
+      "pitfalls": [
+        "H/until是排他上界，不能借批尾越过",
+        "非压实主题要求连续，不可跳缺口",
+        "先无界解压再检查长度已经来不及"
+      ],
+      "symbols": {
+        "decodeRecords": {
+          "why": "把原始Fetch字节转换为一个整体可接受的有限记录批。",
+          "steps": [
+            "验证批CRC和连续性",
+            "有界解压",
+            "验证记录offset及体积",
+            "裁剪固定半开区间",
+            "完整通过后返回"
+          ],
+          "fields": {},
+          "params": {
+            "raw": "Kafka Fetch返回的RecordBatches字节",
+            "topic": "已绑定主题名",
+            "partition": "固定分区编号",
+            "next": "期望首个未重放offset",
+            "until": "本轮冻结排他前沿"
+          },
+          "results": {
+            "0": "全部已验证且在区间内的Record",
+            "1": "验证成功的下一offset；失败保留输入next",
+            "2": "记录不完整/损坏/超限错误"
+          }
+        },
+        "decompressRecords": {
+          "params": {
+            "codec": "Kafka记录批属性中的压缩算法编号；switch选择解压器，未知编号拒绝，所有分支都受解压后长度上限约束。"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "fd54d3f61d13a5c695f6bf34232ebee0759bac1857a66088948494274e4dbb79"
+    },
+    "services/search/internal/client/logsource/read.go": {
+      "purpose": "按原TopicID只读指定重建区间，不参与普通消费组提交。",
+      "why": "重建的L不能随着next推进被重写，否则原L丢失后会假称窗口仍完整。",
+      "flow": [
+        "Read核partition和next>=原L，Capture重验身份/保留窗口",
+        "刷新leader但Fetch v13带原TopicID，禁增量fetch session",
+        "核response TopicID、分区、HighWatermark>=until和无异常事务",
+        "decodeRecords后再Capture，任一身份或保留变化都不交付已解码前缀"
+      ],
+      "pitfalls": [
+        "checkRange检查所有分区原L仍保留，而不只当前next",
+        "重建读取不能提交普通消费组offset"
+      ],
+      "symbols": {
+        "Client.Read": {
+          "why": "从冻结日志身份与边界中读一个有界完整批次。",
+          "steps": [
+            "前置身份/保留检查",
+            "按UUID获取原分区字节",
+            "验证完整批",
+            "后置再次核验原L"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "本次读取父期限",
+            "original": "prepare保存的原日志窗口，Last用作L",
+            "partition": "本轮重放分区0/1/2",
+            "next": "任务持久下一读取位置",
+            "until": "冻结H或封口C排他前沿"
+          },
+          "results": {
+            "0": "完整可应用记录批",
+            "1": "解码后的下一offset",
+            "2": "失败时禁止推进checkpoint"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "36e4b4bdb52107ef86dafb055fb0842c6f957e3bc4cd4f0b1b8af50b95cb8d29"
+    },
+    "services/search/internal/repository/event/validation.go": {
+      "purpose": "重新解析并核验准备写账本的Event原行及传输位置。",
+      "why": "即使业务层传入Event结构体，字段也可能被修改，仓储不能只信它附带RawDigest。",
+      "flow": [
+        "validatePosition限制consumer/topic及非负partition/offset",
+        "validateEvent调用RestoreEvent重建原字段",
+        "比较原字节SHA-256、规范字节及全部ID/序号/时间字段"
+      ],
+      "pitfalls": [
+        "不能只比较event_id认为重复安全",
+        "当前Doc权威摘要不能替换原RawDigest"
+      ],
+      "symbols": {
+        "validateEvent": {
+          "why": "在SQL入口证明Event仍对应不可变原outbox行。",
+          "steps": [
+            "恢复原行",
+            "核摘要与原字节",
+            "逐个比较业务字段"
+          ],
+          "fields": {},
+          "params": {
+            "value": "拟登记的事件"
+          },
+          "results": {
+            "0": "非nil表示不能写入或重放该事件"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "9add2f003ef9edf9dc6d86c21a363ae9909e6a0a4f2b04c699493c1287e29248"
+    },
+    "services/search/internal/repository/event/events_queries.go": {
+      "purpose": "实现原事件账本、物理索引应用水位、整记录checkpoint和日志身份绑定。",
+      "why": "ES/SQL/Kafka没有共同事务，必须明确哪些持久证据已成立，并按原记录重试未知结果。",
+      "flow": [
+        "Receive同事务保存consumed_event和event_origin；重复时核原行/摘要/topic/partition，保留首次成功绑定",
+        "LockApplication按physical+document锁水位，零摘要占位只能活在未提交事务",
+        "ES返回实际状态后SaveApplication检查单调序号与revision，Complete才写authority证明和SUCCEEDED",
+        "AdvanceCheckpoint核整条所有行SUCCEEDED，禁止offset缺口，SQL next=offset+1提交后才能提交broker",
+        "BindLogIdentity只插入不可变cluster/topic UUID，重复键后FOR SHARE核原值；CheckRecovery拒绝缺原行/假成功"
+      ],
+      "pitfalls": [
+        "RECEIVED/APPLYING/RETRY不是消费成功",
+        "ES写成而SQL未知可重试，但不能先写成功回执",
+        "已成功原事件的物理代次/权威摘要不能在重建时改写",
+        "INSERT IGNORE会吞截断等异常，日志身份绑定只能接受1062主键冲突"
+      ],
+      "symbols": {
+        "Receipt": {
+          "why": "原事件第一次应用事实的最小重放信息。",
+          "steps": [],
+          "fields": {
+            "State": "consumed_event阶段：RECEIVED/APPLYING/RETRY/SUCCEEDED等",
+            "Physical": "首次成功应用的物理索引，未成功为空",
+            "Applied": "首次成功权威水位和摘要，不是当前最新状态"
+          },
+          "params": {},
+          "results": {}
+        },
+        "AdvanceCheckpoint": {
+          "why": "以整条Kafka记录全部行成功作为推进SQL next的条件。",
+          "steps": [
+            "核每行原摘要及SUCCEEDED",
+            "读取该分区next/revision",
+            "旧记录重读不回退，未来缺口拒绝",
+            "等于next时写offset+1"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "事务调用期限",
+            "tx": "外层checkpoint事务",
+            "consumer": "消费组账本命名空间",
+            "position": "该完整记录位置",
+            "events": "ParseCanal完整解析出的所有原行"
+          },
+          "results": {
+            "0": "nil仅表示事务内更新成立，外层仍需COMMIT"
+          }
+        },
+        "BindLogIdentity": {
+          "why": "一次性将历史offset解释绑定到物理日志。",
+          "steps": [
+            "尝试INSERT",
+            "只容忍主键已存在",
+            "FOR SHARE读取并严格比较topic/cluster/UUID/revision1"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "事务期限",
+            "tx": "当前绑定事务",
+            "consumer": "消费组身份",
+            "topic": "主题名称",
+            "cluster": "Kafka ClusterID",
+            "id": "Kafka TopicID"
+          },
+          "results": {
+            "0": "身份已相同绑定或稳定错误"
+          }
+        }
+      },
+      "terms": {
+        "physical": "ES物理索引名，应用水位按它隔离",
+        "consumer": "事件账本和checkpoint所属消费组",
+        "position": "原Kafka topic/partition/offset",
+        "applied": "ES重读得到并已写SQL的实际高水位",
+        "next": "SQL已完成整条记录后的下一offset",
+        "revision": "用于防并发覆盖的SQL修订号",
+        "value": "不可变原outbox事件"
+      },
+      "source_sha256": "5be24621ac3513cab192ce004814be9400ea4f1c9d3e2da702399efdead34df7"
+    },
+    "services/search/internal/repository/generation/active.go": {
+      "purpose": "读取并锁定别名对应的SQL物理索引代次，阻止切换期间继续写。",
+      "why": "普通消费与重建切换必须竞争同一代次行，不能在一条Canal记录处理中间换索引。",
+      "flow": [
+        "Find根据exclusive选择FOR SHARE/UPDATE，核physical/generation/revision",
+        "CheckSwitching拒绝任意SWITCHING未恢复作业",
+        "LockCurrent组合当前代次存在性和切换检查",
+        "InsertInitial只登记经过ES归属核验的初代绑定"
+      ],
+      "pitfalls": [
+        "锁顺序先index_generation再event/application，重建也相同",
+        "alias不能等于physical，缺代次不是自动沿配置继续写"
+      ],
+      "symbols": {
+        "Target": {
+          "why": "一次记录处理期间固定的写入目标。",
+          "steps": [],
+          "fields": {
+            "Physical": "具体ES物理索引名",
+            "Generation": "逻辑索引代次，重建切换后递增",
+            "Revision": "SQL绑定修订号，用于比较原代次"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Find": {
+          "why": "提供代次的共享读取或独占切换锁。",
+          "steps": [
+            "校验alias",
+            "选择对应锁SQL",
+            "核读出绑定"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "事务期限",
+            "tx": "外层事务连接",
+            "alias": "逻辑索引别名",
+            "exclusive": "true供初始化/切换独占，false供消费共享"
+          },
+          "results": {
+            "0": "Target绑定",
+            "1": "是否存在代次行",
+            "2": "SQL或绑定错误"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "c397365c29f4aaabca52572af8ca20935502f30d2bb2dd7849e5c7f006c6ee31"
+    },
+    "services/search/internal/logic/generation/guard.go": {
+      "purpose": "用完整记录期间的共享锁固定ES/SQL索引代次，并恢复初代别名建立。",
+      "why": "ES建立成功而SQL提交未知时只能重核原绑定；Do不能假装ES/SQL/Kafka是一个事务。",
+      "flow": [
+        "Initialize以独占代次锁查SQL，已有则ResolveAlias一致；没有则EnsureInitialAlias后InsertInitial",
+        "Do持FOR SHARE代次锁并核真实alias，使用30秒子context执行work",
+        "回调期间包含投影、SQL回执、Kafka确认，结束释放共享锁"
+      ],
+      "pitfalls": [
+        "回调必须用传入context，不可取消后另起后台继续提交",
+        "ES/SQL别名不符或SWITCHING时拒绝继续写"
+      ],
+      "symbols": {
+        "Indexes": {
+          "why": "代次用例需要的ES别名能力。",
+          "steps": [],
+          "fields": {
+            "EnsureInitialAlias": "输入context、alias、initial physical；仅确保本owner原初代绑定，返回错误",
+            "ResolveAlias": "输入context和alias；返回唯一physical、是否存在及错误"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Guard": {
+          "why": "跨整条记录保持物理目标稳定。",
+          "steps": [],
+          "fields": {
+            "database": "Search私有SQL库",
+            "indexes": "真实ES别名客户端",
+            "alias": "逻辑读取/写入别名",
+            "initial": "首次初始化配置物理名"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Guard.Do": {
+          "why": "在回调全过程持有当前代次共享锁。",
+          "steps": [
+            "创建有限context与事务",
+            "锁当前代次并检查SWITCHING",
+            "核真实ES别名",
+            "执行work，退出回滚只读锁事务"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "上层处理生命周期",
+            "work": "接收有界ctx和固定Target，完成一整条记录及确认"
+          },
+          "results": {
+            "0": "回调或代次核验错误"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "f930f5fb668a518d41bd3b6c8f7bb95e31b85fdaa48701803f389bb6a06f2668"
+    },
+    "services/search/internal/logic/indexing/processor.go": {
+      "purpose": "把一个原事件转成Doc当前权威并按ES→SQL成功证据顺序应用。",
+      "why": "事件到达时Doc可能已更高序号；保存旧event digest不妨碍索引当前事实，但两种摘要必须独立。",
+      "flow": [
+        "Event先receive原行/APPLYING并提交，网络查Doc不占原事件事务",
+        "同物理索引已SUCCEEDED走verifyReplay只读核验",
+        "apply锁原事件与index_application，ShouldApply后调用ES并记录实际返回水位",
+        "同事务SaveApplication+Complete后COMMIT",
+        "失败用独立2秒预算记RETRY，不能覆盖已有SUCCEEDED"
+      ],
+      "pitfalls": [
+        "Doc未知不能合成为隐藏墓碑",
+        "ES成功但SQL未知保留原记录重试",
+        "verifyReplay只读回滚，不能提交缺行零摘要占位"
+      ],
+      "symbols": {
+        "SnapshotSource": {
+          "why": "索引用例的权威读取边界。",
+          "steps": [],
+          "fields": {
+            "Current": "输入ctx与原Event（document/最低sequence/release提示），返回Doc当前Authority及错误；失败不得推断隐藏"
+          },
+          "params": {},
+          "results": {}
+        },
+        "IndexSink": {
+          "why": "索引用例的实际ES写入边界。",
+          "steps": [],
+          "fields": {
+            "Apply": "输入ctx、物理索引名、Authority；返回ES实际State和错误，状态可能高于输入水位"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Processor": {
+          "why": "组织原事件账本与当前投影恢复顺序。",
+          "steps": [],
+          "fields": {
+            "database": "Search私有库，保存原事件与应用水位",
+            "source": "Doc当前快照读取器",
+            "sink": "ES单调写入器",
+            "consumer": "原事件账本所属消费组"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Processor.Event": {
+          "why": "处理事件但绝不提交Kafka。",
+          "steps": [
+            "登记不可变原行",
+            "查询当前权威",
+            "幂等应用ES",
+            "同事务保存实际水位/成功回执"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "记录级有界context",
+            "physical": "代次锁固定的目标索引",
+            "event": "已严格解析原outbox事件",
+            "position": "该事件来自的Kafka记录位置"
+          },
+          "results": {
+            "0": "错误会触发原号RETRY记账，调用方保留整条记录"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "22b922df61200d697bca97233d4c4b2341777e7223f4107d811f3ca9be66b262"
+    },
+    "services/search/internal/logic/indexing/indexing_service.go": {
+      "purpose": "以整条Canal记录推进checkpoint，并提供重建快照seed的同事务应用。",
+      "why": "一条消息可有多行，前几行成功不允许提交整条offset；快照seed没有event_id，不能伪造消费账本。",
+      "flow": [
+        "Processor.Record先ParseCanal全部行，再检查position<=SQL next",
+        "逐事件Event成功后completeRecord核所有回执并提交SQL checkpoint",
+        "Seed独立事务调用SeedInTransaction",
+        "SeedInTransaction用快照项minimum/release查Doc当前权威，在调用方事务保存ES实际水位，方便与next_entry原子推进"
+      ],
+      "pitfalls": [
+        "Kafka同步Commit由外层consumer完成",
+        "seed不能写event_origin/consumed_event假事件",
+        "ES成功而SQL未知时原快照项必须重试，不能跳进度"
+      ],
+      "symbols": {
+        "Processor.Record": {
+          "why": "将Kafka记录定义为提交offset的最小单位。",
+          "steps": [
+            "先完整解析",
+            "核无offset缺口",
+            "逐行完成索引",
+            "提交SQL下一offset"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "记录期限",
+            "physical": "已固定的物理索引",
+            "position": "整条消息位置",
+            "raw": "未经改写Canal原字节"
+          },
+          "results": {
+            "0": "nil说明SQL整条完成，仍待外层broker确认"
+          }
+        },
+        "Processor.SeedInTransaction": {
+          "why": "在重建任务事务内应用快照项，以便水位与快照进度同提交。",
+          "steps": [
+            "从Doc读当前权威",
+            "锁目标应用水位",
+            "ES单调更新后保存实际State",
+            "不COMMIT，交给任务方"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "重建步骤有界期限",
+            "tx": "持代次/任务锁的外层事务",
+            "physical": "新建目标物理索引",
+            "entry": "快照目录document/minimum/release引用"
+          },
+          "results": {
+            "0": "本项应用错误，外层不能推进next_entry"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "e521a8b407071d292a86e60d3641f5e7db1214c12a8896d777aa45d81a42354d"
+    },
+    "services/search/internal/logic/consumer/consumer.go": {
+      "purpose": "维护唯一在途Kafka记录，按投影/SQL完成后再提交broker并判定恢复就绪。",
+      "why": "失败后换下一条记录会丢事件，启动就绪还必须赶上启动时冻结的日志前沿。",
+      "flow": [
+        "Step互斥，初始化核代次、恢复账本与窗口并记录startup frontier",
+        "只在current为空时Fetch，之后复核broker窗口与SQL next",
+        "generation.Do内Processor.Record完成SQL，再broker.Commit",
+        "两步都确认才current=nil；错误保留原记录",
+        "Ready核最近失败、真实窗口、alias代次及SQL已追到启动frontier"
+      ],
+      "pitfalls": [
+        "broker Committed不得领先SQL next；SQL next不能落在保留窗口外",
+        "空闲Fetch取消不代表业务失败，可转inspect核就绪",
+        "frontier是启动时末尾，不是每次追随不断增长末尾"
+      ],
+      "symbols": {
+        "Broker": {
+          "why": "消费组传输需要的最小能力。",
+          "steps": [],
+          "fields": {
+            "Window": "ctx→完整三分区First/Last/Committed窗口或错误",
+            "Fetch": "ctx→唯一在途原Record，失败不得越过原位置",
+            "Commit": "ctx、原Record→同步提交结果；仅在SQL整条完成后调用"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Generations": {
+          "why": "整条记录目标代次的锁边界。",
+          "steps": [],
+          "fields": {
+            "Initialize": "ctx→核/建ES及SQL初代并恢复一致性",
+            "Ready": "ctx→核当前代次和别名可用",
+            "Do": "ctx、接收有界ctx与Target的回调→错误；回调期间持共享代次锁"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Indexer": {
+          "why": "Consumer只委托完整记录，不处理单行完成状态。",
+          "steps": [],
+          "fields": {
+            "Record": "ctx、physical、Position、原Value字节→错误；nil证明所有行及SQL checkpoint已完成"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Consumer": {
+          "why": "一个消费循环的恢复状态。",
+          "steps": [],
+          "fields": {
+            "database": "Search私有库",
+            "broker": "日志身份已绑定的组传输",
+            "generation": "代次共享锁执行器",
+            "indexer": "完整记录索引用例",
+            "group": "消费者账本命名空间",
+            "topic": "固定日志名称",
+            "stepMu": "串行Step，保障仅一条current",
+            "current": "失败时保留的原记录",
+            "stateMu": "保护Ready并发读取恢复状态",
+            "initialized": "启动账本/窗口核验是否完成",
+            "frontier": "初始化观察的各分区排他末尾",
+            "failure": "最近一次Step错误，使Ready保守失败"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Consumer.checkpoints": {
+          "params": {
+            "audit": "true先在同一事务检查消费恢复记录与检查点一致性，再读取全部分区下一位置；正常逐条推进时可传false，不能据此省略启动恢复审计。"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "40bb61b1a56e281ae0ffa11142a312aa5892216d74e0e863caf223d70fc4885e"
+    },
+    "services/search/internal/svc/log_identity.go": {
+      "purpose": "首次持久绑定普通消费者的物理日志身份，并保守处理已有旧checkpoint。",
+      "why": "当前同名主题的UUID不能证明旧offset曾属于它；有历史但无身份时必须有本owner先前prepare证据。",
+      "flow": [
+        "bindConsumerLog锁当前generation",
+        "无consumer_log_identity时检查是否有consumer_checkpoint",
+        "存在历史则取最早rebuild_binding并核owner/alias/topic/cluster/TopicID",
+        "BindLogIdentity只建立不覆盖原身份，COMMIT未知保留原值重查"
+      ],
+      "pitfalls": [
+        "不能用今天Capture的身份覆盖旧历史",
+        "SEARCH_LOG_IDENTITY_BOOTSTRAP_REQUIRED需要补正确迁移依据，不可删除旧checkpoint绕过"
+      ],
+      "symbols": {},
+      "terms": {},
+      "source_sha256": "9a48f1a1caa2cadf495baacb45555971a01266740e4b29847bb4a92b4770dcc4"
+    },
+    "services/search/internal/svc/consumer_wiring.go": {
+      "purpose": "装配消费用例，并用UUID直接Fetch核对名称消费组取出的每条原字节。",
+      "why": "成熟组协议按名称读取/提交，额外TopicID核验防同名主题重建后继续解释旧offset。",
+      "flow": [
+        "boundBroker.capture首次把identity持久绑定，后续Capture要求相同",
+        "Window前后核UUID，再读组窗口",
+        "Fetch缓存组record，用logs.Read按UUID取同offset逐字节比较才交付",
+        "Commit前核身份，组提交成功后再次核；后检查失败保存committed供原记录重试确认",
+        "NewConsumer组合Snapshots/ES/Kafka/LogSource/Guard/Processor并清理构造失败资源"
+      ],
+      "pitfalls": [
+        "pending/committed分别代表UUID未核完和组提交后身份未核完，不能混为可丢弃缓存",
+        "Ready独立identity锁不等待2秒Fetch大锁"
+      ],
+      "symbols": {
+        "boundBroker": {
+          "why": "给按主题名的组协议补上不可变日志身份验证。",
+          "steps": [],
+          "fields": {
+            "group": "普通Kafka组读取/同步提交客户端",
+            "logs": "按TopicID直接只读的日志客户端",
+            "bind": "首次身份落SQL函数",
+            "mu": "串行Fetch/Commit/Close",
+            "identityMu": "仅串行首次/持续身份捕获，不挡Ready于长Fetch",
+            "identity": "已持久固定的Cluster/Topic/UUID",
+            "pending": "组已取但UUID原字节尚未核验记录",
+            "committed": "组已确认提交但后置身份核验尚未知的原记录"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Consumer": {
+          "why": "组合服务资源生命周期与业务消费循环。",
+          "steps": [],
+          "fields": {
+            "logic": "持在途记录/恢复状态的Consumer用例",
+            "kafka": "带UUID验证的boundBroker",
+            "elastic": "ES连接池客户端",
+            "closed": "原子关闭标志，避免重复释放"
+          },
+          "params": {},
+          "results": {}
+        }
+      },
+      "terms": {},
+      "source_sha256": "737ba277fb7d97a3106d0e57e235a244e54a7fd7faa838cef444990e935dff74"
+    },
+    "services/search/internal/worker/consumer.go": {
+      "purpose": "驱动串行消费循环，失败有界退避且只记录稳定错误码。",
+      "why": "一个坏记录不应被跳过或被日志原文泄漏；worker负责再次调用Step，原记录由Consumer持有。",
+      "flow": [
+        "Run defer Close，循环Step",
+        "错误码改变时才Warn，恢复后仅一次Info",
+        "固定1秒timer可被ctx取消",
+        "非稳定错误替换SEARCH_CONSUMER_UNAVAILABLE"
+      ],
+      "pitfalls": [
+        "不得在worker丢弃current或手动前移offset",
+        "不能输出Kafka原Value或第三方错误文本"
+      ],
+      "symbols": {
+        "Consumer": {
+          "why": "worker只拥有循环与关闭两个操作。",
+          "steps": [],
+          "fields": {
+            "Step": "ctx→一次恢复/处理原在途记录，失败下轮仍是原记录",
+            "Close": "释放组客户端等资源并报告关闭错误"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Run": {
+          "why": "在生命周期内重试原工作，不改变业务提交顺序。",
+          "steps": [
+            "调用Step",
+            "净化状态日志",
+            "失败等待可取消timer",
+            "退出关闭资源"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "整个服务停止信号",
+            "consumer": "持有真实在途状态的消费服务"
+          },
+          "results": {}
+        }
+      },
+      "terms": {},
+      "source_sha256": "999724eb556baf281b58fa277391c6650c36643bc120e5a2739db914268005ba"
+    },
+    "services/search/internal/domain/cursor/pagination_models.go": {
+      "purpose": "定义游标链在途控制、查询范围绑定和原始ES sort三元组校验。",
+      "why": "MySQL JSON和Go float64都可能改写高位数字词法，分页位置必须保留原字节；scope仅绑定Doc请求，不能当用户当前权限。",
+      "flow": [
+        "Control区分OPENING/IDLE/INFLIGHT，nonce/deadline约束在途确认",
+        "EncodeControl把Tail作为UTF8字符串入JSON，Decode拒绝重复根键/未知字段并恢复RawMessage",
+        "ValidateQuery核query摘要、500字符、page_size和scope，复制可变protobuf切片",
+        "ValidateSort只允许score、十进制文档字符串、uint64 shard三元组，拒绝舍入/指数/转义ID"
+      ],
+      "pitfalls": [
+        "不能直接json.Marshal(Control)入库，否则tail内数字会被MySQL规范化",
+        "ScopeHash不是浏览器准入凭证，最终权限仍由Doc逐候选核验"
+      ],
+      "symbols": {
+        "Control": {
+          "why": "SQL游标链最新确认位置和一次未知调用的恢复状态。",
+          "steps": [],
+          "fields": {
+            "Version": "持久格式版本1",
+            "Phase": "OPENING为申请PIT，INFLIGHT为查询/关闭在途，IDLE无在途",
+            "Tail": "最新完整确认批尾的原始sort JSON；不是批次历史",
+            "Nonce": "64位十六进制随机领取标记，拒绝迟到确认",
+            "Deadline": "当前调用Unix毫秒期限，不能超过原Expires",
+            "RetryAt": "下一关闭重试最早Unix毫秒时刻",
+            "Uncertain": "可能存在未观测轮换PIT，已知句柄关闭也不能提前释放配额"
+          },
+          "params": {},
+          "results": {}
+        },
+        "persistedControl": {
+          "why": "SQL JSON的安全存储形状。",
+          "steps": [],
+          "fields": {
+            "Version": "控制格式版本1",
+            "Phase": "当前阶段",
+            "Tail": "包含原sort JSON词法的字符串指针；nil代表首批前",
+            "Nonce": "当前领取身份",
+            "Deadline": "当前调用绝对毫秒期限",
+            "RetryAt": "恢复重试时刻",
+            "Uncertain": "未知PIT轮换标记"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Query": {
+          "why": "已校验且自有副本的Doc候选请求。",
+          "steps": [],
+          "fields": {
+            "Query": "原查询文字，不擅自trim改写摘要",
+            "QueryHash": "原查询SHA-256十六进制",
+            "PageSize": "Search固定候选批大小，上层要求100",
+            "Scope": "Doc认证的scope/session/space绑定副本"
+          },
+          "params": {},
+          "results": {}
+        }
+      },
+      "terms": {},
+      "source_sha256": "8e2f7b379a6f0e38d5889f9cdf3d9c873f3a7edfb3f0805c3a4edaf38c6c0d2e"
+    },
+    "services/search/internal/domain/cursor/anchor.go": {
+      "purpose": "实现带用途隔离HMAC的完整候选批锚点和NEXT/REPLAY信封。",
+      "why": "续接只能引用已经完整取得的批次，不能让客户端自由填写任意search_after或直接持有PIT。",
+      "flow": [
+        "Batch绑定随机chain、before/after原sort、count/more和完整候选摘要",
+        "Codec.Seal编码固定magic/长度并HMAC；Open验签后复制sort字节",
+        "Envelope只携动作和已签锚点，ParseEnvelope后仍必须Open验签",
+        "query/scope/session/physical/期限保存在chain对应SQL行"
+      ],
+      "pitfalls": [
+        "More=true必须满100候选，0条不能移动after",
+        "全零签名key拒绝；token不存PIT",
+        "信封动作未签名但只允许受信Doc在有效锚点上选择"
+      ],
+      "symbols": {
+        "Batch": {
+          "why": "不可随意改写的一个完整候选批证据。",
+          "steps": [],
+          "fields": {
+            "Chain": "随机32字节链秘密标识，SQL只存其hash",
+            "Before": "本批搜索前的位置；nil为首批",
+            "After": "本批末候选原sort；空批与Before相等",
+            "Count": "本批条数0..100",
+            "More": "是否存在经验证的第101个探测候选",
+            "Digest": "完整有序候选及边界的SHA-256"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Codec": {
+          "why": "持有HMAC主密钥的签名器。",
+          "steps": [],
+          "fields": {
+            "key": "32字节非全零密钥的自有副本，不写token或日志"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Codec.Open": {
+          "why": "只接受合法签名与精确二进制布局的原批次。",
+          "steps": [
+            "核magic/长度",
+            "常量时间验HMAC",
+            "读取并复制before/after",
+            "核批语义及无多余字节"
+          ],
+          "fields": {},
+          "params": {
+            "raw": "不含信封的已签锚点字节"
+          },
+          "results": {
+            "0": "验证过的Batch",
+            "1": "任何修改/格式错误均拒绝"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "e5407df00cfb7cac30003709dad9a06bc99ff766ad42e4cf1bc3b39870f54433"
+    },
+    "services/search/internal/domain/cursor/digest.go": {
+      "purpose": "为完整有序候选批和分页边界计算稳定摘要。",
+      "why": "重放时PIT句柄和调用nonce可能变化，但返回候选身份/顺序必须与原批完全相同。",
+      "flow": [
+        "validateDigestCandidates核候选doc/release/seq/physical、sort绑定doc且无重复",
+        "要求所有候选同物理索引，after等于最后sort",
+        "DigestCandidates写用途标签、长度前缀、before/after、count/more，再按序写每候选身份与原sort"
+      ],
+      "pitfalls": [
+        "不能只hash文档ID而遗漏release/sequence/排序位置",
+        "摘要不包含PIT/nonce/时间，否则合法重放无法匹配"
+      ],
+      "symbols": {
+        "DigestCandidates": {
+          "why": "把分页重放的结果一致性压缩成可签名证据。",
+          "steps": [
+            "验证整批及边界",
+            "用长度前缀防拼接歧义",
+            "按原顺序散列完整候选"
+          ],
+          "fields": {},
+          "params": {
+            "before": "本批起点原sort或nil",
+            "after": "本批终点原sort",
+            "candidates": "完整有序最小候选列表",
+            "more": "是否存在已验证探测项"
+          },
+          "results": {
+            "0": "32字节批摘要",
+            "1": "候选或边界不一致错误"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "acc398a535cf0f6d2ba264097a95a6f33adbfaa995493658428dfb9f664b5c83"
+    },
+    "services/search/internal/repository/cursor/registry.go": {
+      "purpose": "持久登记单条PIT链的身份、绝对期限、阶段和配额。",
+      "why": "进程退出不能丢掉未知PIT资源事实；OPENING和CLOSING仍占配额，不能通过失败建链无限分配ES资源。",
+      "flow": [
+        "validateRecord核chain/query/scope哈希、session、physical/generation、毫秒期限和Control",
+        "Create要求调用方已持排他generation锁，锁定读计OPEN+CLOSING<=128、总行<=1024",
+        "Lock明确读取存在性，TryLock供worker SKIP LOCKED但false不证明不存在",
+        "Check读取最多1025行验证所有持久事实可恢复"
+      ],
+      "pitfalls": [
+        "未知OPEN或轮换句柄可为空但只允许特定状态",
+        "PIT最长64KiB且无空白，不能截断后继续",
+        "配额必须当前锁定读，不能沿旧一致快照漏掉其他代次"
+      ],
+      "symbols": {
+        "Record": {
+          "why": "单链不可变身份与可推进资源状态。",
+          "steps": [],
+          "fields": {
+            "Hash": "随机Chain的SHA-256，SQL主键",
+            "PIT": "最新已观测ES PIT句柄，不进入用户token",
+            "Physical": "建链时物理索引",
+            "Generation": "建链时SQL索引代次",
+            "ScopeHash": "Doc授权范围绑定摘要",
+            "QueryHash": "原查询文本摘要",
+            "Session": "原登录session引用；匿名为空",
+            "PageSize": "固定候选批大小100",
+            "Expires": "创建时绝对到期时间，重试不续期",
+            "State": "OPEN/CLOSING/CLOSED，只能向关闭方向收紧",
+            "Control": "最新尾部、在途nonce/deadline和未知标记"
+          },
+          "params": {},
+          "results": {}
+        },
+        "scanner": {
+          "why": "兼容sql.Row/sql.Rows的行读取接口。",
+          "steps": [],
+          "fields": {
+            "Scan": "按rowColumns固定列顺序填充指针，返回驱动读取错误"
+          },
+          "params": {},
+          "results": {}
+        }
+      },
+      "terms": {},
+      "source_sha256": "a7d40f9b6f543bbda7084ba5521a8c8eed2a452509fbc51a63ae56538e21586b"
+    },
+    "services/search/internal/repository/cursor/pagination_queries.go": {
+      "purpose": "调度到期链关闭、保守保存进度并删除已过期CLOSED行。",
+      "why": "关闭未知不等于资源已释放；迟到查询不能重新打开CLOSING链，也不能更换原scope/session/期限。",
+      "flow": [
+        "Due按expires/retry_at/deadline选最多16条并SKIP LOCKED，提交后才访问ES",
+        "Save重读并逐项比不可变绑定，只允许更新PIT/Control/State",
+        "状态底线禁止CLOSING→OPEN及CLOSED复活",
+        "DeleteClosed先跳锁取精确hash，仅删除原期限已过的CLOSED"
+      ],
+      "pitfalls": [
+        "Due只是调度观察，领取时必须再Lock核nonce/期限",
+        "不能DELETE CLOSING来释放配额",
+        "不能把失败关闭链续到新Expires"
+      ],
+      "symbols": {
+        "Save": {
+          "why": "在SQL边界防止进度更新顺便篡改链身份。",
+          "steps": [
+            "校验Record",
+            "锁当前原行",
+            "比较physical/generation/query/scope/session/page/expiry",
+            "核关闭不可逆",
+            "更新句柄与控制状态"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "SQL调用期限",
+            "tx": "已开始的事务",
+            "record": "保留原绑定、仅修改进度的目标记录"
+          },
+          "results": {
+            "0": "nil尚待外层COMMIT"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "9a1bc68a95f19621f9794a95ca3b045ab8b5b86b2da293b29273ca8e4a29f8dc"
+    },
+    "services/search/internal/client/elastic/candidates.go": {
+      "purpose": "通过PIT和原search_after读取完整100候选批，并严格验证分片与探测项。",
+      "why": "候选只是文档/发布/序号引用；Search不输出旧索引正文，Doc再核当前权限及正式版本。",
+      "flow": [
+        "OpenPIT以原Expires剩余时长申请，禁止部分分片；失败若已有合法新PIT仍交回关闭线索",
+        "Candidates按score desc/document asc/shard asc查询visible投影，phrase slop0匹配title/text/章节标题",
+        "请求size+1并验证全部hits及第101项，才截为100和More",
+        "响应需明确timed_out=false、无terminated_early且全部分片成功",
+        "ClosePIT仅明确succeeded和num_freed>=0才确认关闭"
+      ],
+      "pitfalls": [
+        "keep_alive向下取毫秒，不可为凑1ms延长原期限",
+        "损坏第101项不能当has_more=true",
+        "搜索错误带的新PIT也要保存，不能继续用旧句柄"
+      ],
+      "symbols": {
+        "CandidateBatch": {
+          "why": "一次完整ES查询结果及最新资源句柄。",
+          "steps": [],
+          "fields": {
+            "PIT": "响应中的新句柄；即使结果失败也尽量保留供关闭",
+            "Candidates": "最小引用候选，不含标题/摘要正文",
+            "End": "最后候选的原sort，空批保留before",
+            "More": "已验证探测候选证明还有后续"
+          },
+          "params": {},
+          "results": {}
+        },
+        "pitShards": {
+          "why": "必须显式存在的分片完整性证明。",
+          "steps": [],
+          "fields": {
+            "Total": "本次目标总分片数，必须正数",
+            "Successful": "已成功分片数，必须等于Total且包含Skipped",
+            "Skipped": "可省略；若存在须0..Successful",
+            "Failed": "必须显式为0"
+          },
+          "params": {},
+          "results": {}
+        },
+        "candidateHit": {
+          "why": "ES最小候选hit的传输结构。",
+          "steps": [],
+          "fields": {
+            "Physical": "_index，必须与链绑定物理索引一致",
+            "ID": "_id，必须与_source.document_id相同",
+            "Source": "document_id/release_id/sequence三个规范十进制字符串",
+            "Sort": "原score/Doc/shard三元组JSON"
+          },
+          "params": {},
+          "results": {}
+        }
+      },
+      "terms": {},
+      "source_sha256": "a02adb35d249b11c9678fa5d7f9e57b1cd2756a621c23cb09417e04d9ffbb8e9"
+    },
+    "services/search/internal/logic/candidates/candidates_service.go": {
+      "purpose": "组织单链PIT预留、查询确认、签名NEXT/REPLAY及未知资源关闭恢复。",
+      "why": "SQL与ES不可原子提交，必须先持久预留再分配PIT，用nonce拒绝迟到响应，并在不确定轮换时保留配额到原到期。",
+      "flow": [
+        "SearchCandidates固定批100，先限并发2；新链reserve在排他代次锁下登记OPENING后才申请PIT",
+        "按chain hash互斥，在generation.Do中beginQuery核原query/scope/session/代次/期限并登记nonce",
+        "Open成功先retainOpened落SQL，再Candidates；REPLAY比较完整批digest/count/more/end，confirmQuery持原nonce写IDLE才回复",
+        "fail仅做有界SQL补偿转CLOSING，迟到补偿不能覆盖新nonce或已确认IDLE",
+        "closeHash独立关闭槽：锁内领取→锁外关ES→锁内原claim确认；unknown轮换保留占额至原Expires",
+        "Cleanup每轮16项且跳锁，Ready要求已恢复并重新Check数据库"
+      ],
+      "pitfalls": [
+        "Search候选不是当前读权限，Doc需对每个候选二次核权再读固定正式正文",
+        "没有批次历史缓存；REPLAY在同PIT重新取批并核摘要",
+        "绝对到期只证明应用链不能再用，不保证ES reaper立即释放所有context",
+        "不能跨ES调用持SQL行锁或靠删除未知链释放配额"
+      ],
+      "symbols": {
+        "Generations": {
+          "why": "候选查询期间固定物理索引代次。",
+          "steps": [],
+          "fields": {
+            "Ready": "ctx→核当前ES/SQL别名一致和无待恢复切换",
+            "Do": "ctx、func(ctx,Target)→错误；完整查询期间持代次共享锁"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Indexes": {
+          "why": "PIT客户端协议，所有时长都来自原绝对期限剩余量。",
+          "steps": [],
+          "fields": {
+            "OpenPIT": "ctx、physical、remaining→PIT句柄及错误；错误可能仍带关闭线索",
+            "Candidates": "ctx、pit、query、原after JSON、批size、remaining→CandidateBatch和错误",
+            "ClosePIT": "ctx、pit→明确关闭成功或未知错误"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Candidates": {
+          "why": "游标链业务状态和本进程资源限流。",
+          "steps": [],
+          "fields": {
+            "database": "Search私有SQL注册表",
+            "generation": "ES/SQL代次共享锁接口",
+            "indexes": "真实PIT客户端",
+            "alias": "逻辑索引别名",
+            "codec": "签名批锚点HMAC编码器",
+            "ttl": "建链绝对寿命，最多2分钟",
+            "admission": "最多2个并行候选查询槽",
+            "queries": "同chain查询串行锁",
+            "closingAdmission": "显式Close与worker共享的1个关闭槽",
+            "sweepMu": "防Cleanup轮次重叠",
+            "recovered": "至少一次完整Cleanup成功的进程标志"
+          },
+          "params": {},
+          "results": {}
+        },
+        "keyLock": {
+          "why": "单链查询的进程内可取消互斥。",
+          "steps": [],
+          "fields": {
+            "token": "容量1通道，持有即执行权",
+            "references": "持有者和等待者总数，归零才删Map"
+          },
+          "params": {},
+          "results": {}
+        },
+        "keyLocks": {
+          "why": "按游标chain hash隔离的查询锁集合。",
+          "steps": [],
+          "fields": {
+            "mu": "保护entries及引用计数",
+            "entries": "chain hash→keyLock映射"
+          },
+          "params": {},
+          "results": {}
+        },
+        "Candidates.confirmQuery": {
+          "why": "只接受原在途调用在原期限内返回的完整批次。",
+          "steps": [
+            "锁原记录",
+            "核OPEN、nonce、INFLIGHT及deadline/expiry",
+            "保存最新PIT和end并转IDLE清nonce"
+          ],
+          "fields": {},
+          "params": {
+            "ctx": "确认事务期限",
+            "queried": "本次领取时记录及最新返回PIT",
+            "end": "完整批次最后sort原字节"
+          },
+          "results": {
+            "0": "确认失败不得发送Complete=true"
+          }
+        }
+      },
+      "terms": {},
+      "source_sha256": "59353f307175dc23e04022741c8a03a405ae35e9ff5b80bdc640e4302f48e1e7"
+    },
+    "services/search/internal/svc/candidates.go": {
+      "purpose": "从Search配置装配游标签名、代次守卫、ES客户端并管理关闭。",
+      "why": "密钥编码和TTL要在启动时明确失败，运行中不能静默换key使已签锚点失去绑定。",
+      "flow": [
+        "NewCandidates核search store/config，解码规范hex CursorKey",
+        "创建ES和generation guard，再构造logic.Candidates及TTL",
+        "构造失败关闭已创建ES连接",
+        "SearchCandidates/CloseCursor/Ready检查closed后委派，Close原子单次释放"
+      ],
+      "pitfalls": [
+        "不输出CursorKey到日志或教材",
+        "Cleanup负责恢复SQL/PIT，关闭连接池不等于已经关闭全部持久链"
+      ],
+      "symbols": {
+        "Candidates": {
+          "why": "候选服务的装配与生命周期包装。",
+          "steps": [],
+          "fields": {
+            "usecase": "持久PIT链协议用例",
+            "elastic": "此服务实例拥有的ES连接池",
+            "closed": "原子停止标记，拒绝新查询"
+          },
+          "params": {},
+          "results": {}
+        }
+      },
+      "terms": {},
+      "source_sha256": "5f22ca9bfd490443ab90a36f0120a2c944949452e954ee5475714c39206ce818"
+    },
+    "services/search/internal/worker/cursors.go": {
+      "purpose": "串行驱动持久游标恢复关闭和已过期登记清理。",
+      "why": "ticker并发启动多轮会重复领取并放大ES压力，有限轮次和单项预算能避免坏首行堵全部恢复。",
+      "flow": [
+        "RunCursors每轮10秒调用Cleanup，内部最多16项",
+        "按稳定错误码变化记录，恢复后记录一次",
+        "轮次结束再等500毫秒，ctx取消即退出并Close服务"
+      ],
+      "pitfalls": [
+        "不能因为一轮超时就删SQL未知链",
+        "不会重开PIT或延长绝对Expires"
+      ],
+      "symbols": {
+        "Cursors": {
+          "why": "关闭worker的最小业务能力。",
+          "steps": [],
+          "fields": {
+            "Cleanup": "ctx→有界恢复SQL/PIT链并报告首个失败",
+            "Close": "结束客户端生命周期，不改写业务成功事实"
+          },
+          "params": {},
+          "results": {}
+        }
+      },
+      "terms": {},
+      "source_sha256": "12255206240b14f38e7e922b4dc0766e2605f25f6c64c4fc79bc92b549ca33e6"
+    },
+    "services/search/internal/client/elastic/aliases_client.go": {
+      "purpose": "核验并切换 Elasticsearch 唯一写别名，区分仍在来源索引与已经到达目标的恢复事实。",
+      "why": "ES 与 SQL 无法组成同一个事务；必须先确认真实 ES 绑定，再由原重建任务完成 SQL 代次，不能把 HTTP 200 当成全部完成。",
+      "flow": [
+        "ResolveAlias 拒绝多个目标、filter/routing及非本owner/schema索引，只接受唯一 is_write_index=true 的绑定。",
+        "EnsureInitialAlias 仅安装配置指定的初代绑定；已有不同绑定直接冲突，不擅自覆盖。",
+        "InspectAliasSwitch 验证来源、目标及目标所有权；SwitchAlias 使用同一次 _aliases 请求精确 remove+add，随后重新读取绑定。",
+        "validSwitchAcknowledgement 除顶层 acknowledged 外还核验可选 action_results 中两个原动作的目标及状态。"
+      ],
+      "pitfalls": [
+        "TARGET 只代表 ES 事实，仍需原 SWITCHING 任务提交 SQL。",
+        "恢复核验不能创建缺失的空目标索引；超时/未知回执不得另选目标。"
+      ],
+      "terms": {
+        "alias": "稳定对外别名，必须为合法物理名形式且与source/target不同。",
+        "source": "原准备中固定的来源物理索引。",
+        "target": "原准备中固定的目标物理索引，已构建并属于同一owner。",
+        "physical": "配置或查询得到的实际索引名，不是别名。",
+        "data": "ES响应原始JSON字节，必须核验实际动作而不只检查HTTP状态。"
+      },
+      "symbols": {
+        "Client.ResolveAlias": {
+          "results": {
+            "0": "唯一绑定的物理索引名称；不存在时为空。",
+            "1": "是否找到了合法绑定；false且error=nil表示404未创建。",
+            "2": "网络故障、格式不符、绑定不唯一或owner/schema错误。"
+          }
+        }
+      },
+      "source_sha256": "b531b3b2f49ae24d28b3e588249afabbedf2f8b04c62aaffe07c1e4874063509"
+    },
+    "services/search/internal/repository/rebuild/completion_queries.go": {
+      "purpose": "读取专用重放检查点和终态证明，并在原事务内落定索引代次及任务成功。",
+      "why": "重建必须有自己从原L创建的检查点；借用普通消费进度会把未重放到目标的消息误判为完成。",
+      "flow": [
+        "PendingReplay 仅选 ACCEPTED 的原任务；缺失检查点不是从0开始。",
+        "ReplayCheckpoints 验证每个next处在原L与当前上界之间，读取时不持锁跨Processor事务。",
+        "LoadTerminalFacts 与 CheckTerminalFrontier 在原事务内锁住任务和三分区检查点，要求next恰好等于封存H。",
+        "CompleteSwitch 先CAS index_generation，再以原号/指纹/验证摘要将job置SUCCEEDED，提交由外层统一负责。"
+      ],
+      "pitfalls": [
+        "任一影响行数不为1都必须返回冲突，不能部分提交。",
+        "next超过H也不算本次有限区间已验证；提交未知只能原号重读。"
+      ],
+      "terms": {
+        "id": "原重建任务数据库主键。",
+        "operation": "固定的重建操作号。",
+        "starts": "准备阶段固定的三个分区起点L。",
+        "ends": "本次读取允许的三个分区终点；终态确认时为已封存H。",
+        "topic": "原准备绑定的Kafka主题名。",
+        "job": "已在原锁序下读取的任务事实，包含来源、目标和目标代次。",
+        "sourceGeneration": "原准备固定的来源代次，用作CAS条件。",
+        "sourceRevision": "原准备固定的来源修订号，用作CAS条件。",
+        "fingerprint": "绑定原重建请求的32字节摘要。",
+        "validation": "已经封存的32字节验证摘要。",
+        "cursor": "包含固定成功结果的序列化终态封装。"
+      },
+      "symbols": {
+        "TerminalFacts": {
+          "fields": {
+            "Cursor": "任务cursor_json中的固定终态封装。",
+            "Frontier": "rebuild_progress中不可变的三分区H载荷。",
+            "Validation": "已完成验证的摘要，缺失时不能确认终态。"
+          }
+        }
+      },
+      "source_sha256": "aee59bcf7d31e3fe20376bb1dbc089267dfedde09eff95e3353181366dddea6a"
+    },
+    "services/search/internal/repository/rebuild/installation_queries.go": {
+      "purpose": "保存已验证的导入封口，并维护快照播种进度。",
+      "why": "文件发布与SQL不原子，因此先发布完整校验副本，再在短事务中记录接受事实；播种游标则与每篇文档的物理应用同事务推进。",
+      "flow": [
+        "FindImport 恢复数据库已接受的封装摘要/签发者摘要，检查封口数量与条目摘要。",
+        "SaveImport 仅把原 PREPARED 行条件更新为IMPORTED，调用者提交事务。",
+        "PendingSnapshot 找到待播种原号；AdvanceSnapshot 用before做CAS，FinishSnapshot仅将SNAPSHOT推进为REPLAYING。"
+      ],
+      "pitfalls": [
+        "已接受签名恢复依据持久摘要，不因当前证书到期重签原事实。",
+        "ES写入或SQL提交未知时保留原after，不能猜测已推进。"
+      ],
+      "terms": {
+        "operation": "最初准备的重建原号。",
+        "row": "已经校验并完整发布到accepted目录的导入封口。",
+        "id": "原重建job主键。",
+        "before": "本轮读到的旧snapshot_after，用作并发CAS。",
+        "after": "本篇文档成功应用后的新snapshot_after。"
+      },
+      "symbols": {
+        "Imported": {
+          "fields": {
+            "Seal": "解析后的Doc快照封口，绑定prepare引用、条目数量和摘要。",
+            "Envelope": "保留原始签名封装字节，用于原号恢复。",
+            "Digest": "整个签名封装的SHA-256摘要。",
+            "SignerDigest": "原接受的签发者摘要，恢复不更换签发者。"
+          }
+        }
+      },
+      "source_sha256": "db322828cb5cbf6997adf1257040ec10578fab8beb7a3102cb1bc96142f24ab3"
+    },
+    "services/search/internal/repository/rebuild/preparation_queries.go": {
+      "purpose": "持久化重建准备绑定、三分区封存前沿、任务创建及分页验证进度。",
+      "why": "这些记录共同证明同一次重建用了哪份快照和哪段日志。统一 generation→binding→job 的锁顺序，避免准备、推进、切换互相倒锁。",
+      "flow": [
+        "Find 以原接受摘要还原Prepare，再逐字段与数据库列核对；CheckAvailable防止同别名并行准备。",
+        "Insert 保存PREPARED封装；AcceptJob 在同一事务建立job、progress和三个从原L开始的专用检查点，再将binding置ACCEPTED。",
+        "EncodeFrontier/DecodeFrontier用规范十进制字符串保存H；SealFrontier将H与SWITCHING一起提交，不重新捕获覆盖。",
+        "LoadValidation/SaveValidation保存SNAPSHOT和APPLICATION两阶段的分页位置、累计数量与摘要链；ValidationApplications每页最多32个物理应用记录。"
+      ],
+      "pitfalls": [
+        "SQL内JSON可能重排键，比较签名与摘要时使用保存的原封装或重新规范化的业务载荷。",
+        "缺失准备绑定、检查点或部分导入字段是损坏/冲突，不能当成新任务补一份。"
+      ],
+      "terms": {
+        "operation": "原重建幂等操作号。",
+        "alias": "被重建的稳定搜索别名。",
+        "id": "重建job主键；ConsumerName以它隔离专用消费账本。",
+        "envelope": "原签名准备封装字节。",
+        "signer": "已验证签发者摘要的十六进制字符串。",
+        "ends": "准备封存的三个分区终点H。",
+        "topic": "原准备中固定的Kafka主题。",
+        "starts": "原准备固定的三个分区起点L，以十进制字符串传入。",
+        "physical": "本轮重建目标物理索引。",
+        "after": "上页最后完成的文档编号，下一页严格大于它。",
+        "complete": "是否已完成全部验证，仅最后一页可封存摘要。"
+      },
+      "symbols": {
+        "Binding": {
+          "fields": {
+            "Prepare": "已验签并恢复的原准备业务载荷。",
+            "Envelope": "原准备签名封装，不能从数据库JSON重新拼接签名字节。",
+            "State": "绑定阶段PREPARED/IMPORTED/ACCEPTED等。"
+          }
+        },
+        "Frontier": {
+          "fields": {
+            "Version": "前沿载荷格式版本，当前仅接受1。",
+            "Ends": "三个分区不可变终点H，字符串保留64位偏移量精度。"
+          }
+        },
+        "JobBinding": {
+          "fields": {
+            "Fingerprint": "已接受StartRebuild请求的摘要。",
+            "Revision": "绑定行修订号。",
+            "JobID": "可能尚未创建的job主键；Valid区分NULL与已有任务。"
+          }
+        },
+        "Job": {
+          "fields": {
+            "ID": "重建任务主键。",
+            "Generation": "目标索引代次，应为原来源代次加1。",
+            "SnapshotAfter": "快照播种已完成到的文档编号。",
+            "State": "SNAPSHOT/REPLAYING/SWITCHING/SUCCEEDED等处理阶段。",
+            "SnapshotRef": "已导入Doc快照的内容地址引用。",
+            "Target": "原准备的目标物理索引。",
+            "Source": "原准备的来源物理索引。",
+            "Watermark": "重建描述符JSON，绑定Prepare/Snapshot及原日志窗口。"
+          }
+        },
+        "Validation": {
+          "fields": {
+            "Version": "验证进度载荷格式版本。",
+            "Phase": "先SNAPSHOT覆盖检查，再APPLICATION全物理记录检查。",
+            "Count": "已检查物理记录数量，规范十进制字符串。",
+            "Digest": "迄今物理记录内容形成的SHA-256摘要链。",
+            "After": "当前阶段分页文档游标，单独存SQL，不序列化进JSON。",
+            "Complete": "数据库已有最终验证摘要，表示验证已封存。"
+          }
+        },
+        "Application": {
+          "fields": {
+            "Document": "物理索引应用记录对应的文档。",
+            "State": "该文档已应用的权威序号、摘要、正式版和可见性。"
+          }
+        }
+      },
+      "source_sha256": "48f636dc461eb4a3bb41b8c31d944cef6dbb82e35da899c6fa6fff8e0ff372cc"
+    },
+    "services/search/internal/logic/rebuild/completion_service.go": {
+      "purpose": "按原日志窗口逐条重放，并把已验证切换事实封装为可重复读取的固定成功结果。",
+      "why": "跨分区没有总顺序；任务成功也不能只依赖state字符串，需要原指纹、H、验证摘要与代次共同构成不可变证明。",
+      "flow": [
+        "Replayer.Step 在锁外获取原Kafka身份的窗口，使用任务专用SQL next，单步最多32条记录；SWITCHING后只补到原H。",
+        "apply 重获原job锁并重验next；旧批次已经完成则返回，跳号则失败，Processor独立完成应用/事件/整记录事务。",
+        "fixedRebuildResult生成含原号、job、目标代次、终态修订和验证摘要的固定JSON，并计算结果摘要。",
+        "finalizeRebuild核原指纹及三分区next=H，CompleteSwitch与终态封装共同提交；SUCCEEDED查询从原封装恢复。"
+      ],
+      "pitfalls": [
+        "锁住job直到Record返回，不代表ES与SQL变成原子事务；未知结果仍按原记录账本恢复。",
+        "不能用当前alias或后来代次重新计算旧操作的成功答复。"
+      ],
+      "terms": {
+        "operation": "固定重建操作号。",
+        "input": "此前锁内读出的原准备、导入与job绑定，写入前仍须重读核验。",
+        "processor": "绑定该job专用consumer名称的整记录处理器。",
+        "record": "broker原始记录，保留主题、分区、连续offset与原字节。",
+        "fingerprint": "32字节原StartRebuild请求摘要。",
+        "facts": "原任务已封存的终态游标、前沿和验证摘要。"
+      },
+      "symbols": {
+        "ReplayLogs": {
+          "fields": {
+            "Logs": "复用准备阶段获取原Kafka身份和窗口的能力。",
+            "Read": "ctx控制取消；Window固定原集群/主题身份与L；int为分区，两个int64为next与有限终点；返回连续原记录及读取位置，错误不允许推进SQL。"
+          }
+        },
+        "ReplayProcessor": {
+          "fields": {
+            "Record": "ctx、目标物理索引、原主题分区offset和原消息字节；完整记录确认后才能推进专用SQL检查点。"
+          }
+        },
+        "Replayer": {
+          "fields": {
+            "Seed": "复用原任务锁序和导入绑定核验。",
+            "Logs": "能捕获窗口并按原身份读取有限日志的客户端。",
+            "Processor": "以专用consumer名创建处理器，隔离普通消费进度。"
+          }
+        }
+      },
+      "source_sha256": "ef8184074aecf3f7097fd38465243562f4608245b096c97c231166b7a68a6062"
+    },
+    "services/search/internal/logic/rebuild/installation_service.go": {
+      "purpose": "在受控目录接受Doc快照，再按固定文件分批播种目标索引。",
+      "why": "先验证完整文件才能让任何条目产生可见副作用；文件先发布后落SQL，避免IMPORTED指向半份副本。",
+      "flow": [
+        "Importer.Import先恢复原号；新导入验证签名与PrepareRef，流式扫描数量/摘要后将完整entries和封口发布到accepted。",
+        "短事务重新核原绑定后记录IMPORTED；已接受副本缺失时只能用相同inbox和原摘要恢复。",
+        "Seeder.Step核原Kafka保留窗口仍覆盖L，snapshotPage整流校验后只交最多32项。",
+        "Seeder.apply对每篇文档用短事务重检job与after，写物理应用并推进游标；空页才进入REPLAYING。"
+      ],
+      "pitfalls": [
+        "不能在Scan回调中直接写ES，否则文件尾部损坏可能在摘要失败前污染索引。",
+        "长文件IO放在代次锁外；未知提交保留原after继续，不换快照或任务号。"
+      ],
+      "terms": {
+        "operation": "原准备/导入/重建共用的操作号。",
+        "reference": "原Doc签名快照的内容地址引用，仅接受.snapshot.json格式。",
+        "dir": "本服务绝对路径accepted目录。",
+        "seal": "已经验签接受的Doc封口，提供总数和entries摘要。",
+        "after": "已经播种完成的最后文档编号。",
+        "id": "当前原job主键。",
+        "entry": "本篇快照条目；nil表示已验证的空尾页，应结束播种。"
+      },
+      "symbols": {
+        "Importer": {
+          "fields": {
+            "Verifier": "本服务CA信任下的签名制品验证器。",
+            "Owner": "本实例owner标识，防止串用其他环境准备。",
+            "Alias": "本服务要重建的搜索别名。",
+            "Inbox": "接收Doc制品的受控绝对目录。",
+            "Accepted": "发布完整校验副本的受控绝对目录。"
+          }
+        },
+        "importReader": {
+          "fields": {
+            "reader": "底层文件Reader，每次读前先检查ctx取消。"
+          }
+        },
+        "SeedWriter": {
+          "fields": {
+            "SeedInTransaction": "ctx和调用者原tx、固定目标物理索引、Doc快照Entry；在同一事务记录物理应用，不写重放事件账本。"
+          }
+        },
+        "SeedIndex": {
+          "fields": {
+            "EnsureIndex": "ctx与原准备目标物理索引名；创建或核验本owner/schema索引，错误则不播种。"
+          }
+        },
+        "Seeder": {
+          "fields": {
+            "Owner": "原准备必须匹配的实例owner。",
+            "Alias": "原准备绑定的稳定搜索别名。",
+            "AcceptedDir": "保存已接受封口和完整entries的绝对目录。",
+            "Writer": "逐篇向固定目标应用权威正文的用例能力。",
+            "Indexes": "创建或验证目标物理索引的能力。",
+            "Logs": "核对原Kafka身份及保留窗口是否仍覆盖L。"
+          }
+        },
+        "seedJob": {
+          "fields": {
+            "prepare": "原签名Prepare业务载荷。",
+            "imported": "已接受Doc封口及原签名摘要。",
+            "job": "SQL原任务状态、目标和播种游标。"
+          }
+        }
+      },
+      "source_sha256": "022d5f5e76a8f937009264d4936f927c2bf6d73e365205cae1a805563cb9a5fe"
+    },
+    "services/search/internal/logic/rebuild/preparation_service.go": {
+      "purpose": "组织重建准备、任务接受、封存切换屏障、两阶段完整验证及未知切换恢复。",
+      "why": "要先固定Kafka原L，再允许Doc建立快照S；追赶接近时才封H暂停普通访问。原H固定后验证的是有限区间，避免新发布让验证永远追不上。",
+      "flow": [
+        "Preparer.Prepare按generation→binding锁序恢复原号；新准备核当前alias、捕获三分区L、签发并保存PREPARED。",
+        "JobService.StartRebuild/GetRebuild绑定同一请求指纹；新接受时创建任务及原L检查点，已有任务按原证明恢复。",
+        "Barrier.Seal等每分区距离末端不超过32条才封存H与SWITCHING；先取排他锁，不从共享锁升级。",
+        "Validator先确认next恰为H，再检查快照最低覆盖、每条物理应用与ES实际内容和总数，最后封摘要。",
+        "Coordinator.finish在原排他事务中核真实alias；SOURCE执行精确切换，TARGET仅落定原SQL结果。"
+      ],
+      "pitfalls": [
+        "缺少验证摘要不能只凭job.state宣布SUCCEEDED；空索引也必须有非零封存证明。",
+        "原号恢复不要求当前代次仍是旧源代次，也不因当前证书过期重新签发原Prepare。",
+        "切换未知时保留SWITCHING，不解除屏障让旧查询越过未完成的代次转换。"
+      ],
+      "terms": {
+        "operation": "贯穿准备、导入、RPC接受和恢复的原操作号。",
+        "target": "请求的目标代次，必须是当前源代次加1。",
+        "request": "固定RebuildRequest，包含原号、目标代次、snapshot引用和规范watermark。",
+        "query": "原号查询，必须携带32字节原请求指纹，不能带文档级Target。",
+        "fingerprint": "原重建请求的规范摘要。",
+        "job": "原SQL重建任务，状态与固定来源均须核验。"
+      },
+      "symbols": {
+        "SwitchIndexes": {
+          "fields": {
+            "InspectAliasSwitch": "ctx、alias、source、target；只核验真实ES状态并返回SOURCE/TARGET，不修改绑定。",
+            "SwitchAlias": "ctx和原alias/source/target；精确执行remove+add，未知回执返回错误交原任务恢复。"
+          }
+        },
+        "Barrier": {
+          "fields": {
+            "Seed": "提供原任务DB、锁序、Kafka身份和固定准备。",
+            "Indexes": "核验及切换原别名的能力，封屏障前必须已装配完整恢复器。"
+          }
+        },
+        "Coordinator": {
+          "fields": {
+            "Barrier": "负责将原H与SWITCHING一起封存。",
+            "Validator": "负责有限区间追平后的完整内容验证。"
+          }
+        },
+        "JobService": {
+          "fields": {
+            "Owner": "必须匹配Prepare的本实例owner。",
+            "Alias": "必须匹配Prepare的本服务稳定别名。",
+            "AcceptedDir": "RPC接受前检查完整快照副本可用的绝对目录。"
+          }
+        },
+        "Logs": {
+          "fields": {
+            "Capture": "ctx控制取消；可选Identity指定原集群/主题UUID，nil用于新准备；返回三个分区的原始可读窗口。"
+          }
+        },
+        "Aliases": {
+          "fields": {
+            "ResolveAlias": "ctx和稳定别名；返回唯一合法物理索引、是否存在及错误，不把404当依赖故障。"
+          }
+        },
+        "Preparer": {
+          "fields": {
+            "Logs": "捕获原L及Kafka身份的能力。",
+            "Aliases": "确认真实ES别名仍与SQL来源匹配。",
+            "Signer": "新准备的签名器，可由LoadSigner延迟提供。",
+            "LoadSigner": "仅在新操作确需签发时读取签名器，原号恢复不依赖新证书仍有效。",
+            "Verifier": "立即验证新签名封装，确认本服务信任链与身份。",
+            "Owner": "当前部署owner，用于绑定及目标名派生。",
+            "Alias": "本服务稳定搜索别名。"
+          }
+        },
+        "ValidationIndexes": {
+          "fields": {
+            "Get": "ctx、目标物理索引、文档ID；返回严格校验后的实际权威内容，隐藏墓碑不得带正文。",
+            "RefreshCount": "ctx和目标物理索引；刷新后读取实际文档总数，核对无漏项或多余项。"
+          }
+        },
+        "Validator": {
+          "fields": {
+            "Seed": "提供原准备、导入快照及job锁定能力。",
+            "Indexes": "读取并严格校验目标ES记录及计数的能力。"
+          }
+        }
+      },
+      "source_sha256": "f014b692bbf7b5c8040d7c44c0b2c74fb4c024639d09b462dd812db3897885fa"
+    },
+    "services/search/internal/server/rpc_server.go": {
+      "purpose": "把冻结的Search内部RPC适配到候选查询、游标关闭和重建用例，并限定外发错误码。",
+      "why": "传输层只转换请求与错误，不承担索引事务；依赖故障保持Unavailable，不能伪装成确定业务拒绝或泄露SQL/ES响应原文。",
+      "flow": [
+        "构造器只注入所需能力，缺失能力时对应RPC返回Unavailable。",
+        "SearchCandidates/CloseCursor委派候选用例，StartRebuild/GetRebuild委派原号重建用例。",
+        "candidateError按固定业务码区分输入、过期/冲突、配额与故障；rebuildError只允许受限字符长度的SEARCH_REBUILD码。"
+      ],
+      "pitfalls": [
+        "提交未知仍是可按原号查询的Unavailable，不能换新号重试副作用。",
+        "NewSearch的兼容可变参数只在恰好一个用例时装配，不应误传多个能力对象。"
+      ],
+      "terms": {
+        "candidates": "候选查询和关闭游标的业务能力，不是ES裸客户端。",
+        "rebuild": "原号开始/查询重建的业务能力。",
+        "usecases": "兼容构造入口的候选用例列表；仅恰好一项才装配。",
+        "request": "当前冻结RPC请求，具体参数规则由所委派用例验证。"
+      },
+      "symbols": {
+        "RebuildOperations": {
+          "fields": {
+            "StartRebuild": "ctx及完整RebuildRequest；返回原操作处理状态/固定结果或错误。",
+            "GetRebuild": "ctx及带原号和请求指纹的OperationQuery；只查询原请求事实。"
+          }
+        },
+        "CandidateOperations": {
+          "fields": {
+            "SearchCandidates": "ctx与规范查询绑定；返回有界候选批次及续页信息，最终用户可见性仍由文档侧核验。",
+            "CloseCursor": "ctx与原CloseCursorRequest；幂等关闭对应游标并返回操作状态。"
+          }
+        },
+        "Search": {
+          "fields": {
+            "candidates": "候选业务依赖，为nil时不接受候选相关RPC。",
+            "rebuild": "重建业务依赖，为nil时不接受重建相关RPC。"
+          }
+        }
+      },
+      "source_sha256": "93069c8b983bd1c21cd9e5c7890834534c1e7b01b7c7e8396d40f7bdb71ae596"
+    },
+    "services/search/internal/worker/rebuild.go": {
+      "purpose": "运行重建后台循环，并在启动普通消费前等待原SWITCHING恢复。",
+      "why": "服务重启不能绕过持久屏障。后台失败只暂停同一任务，不能清空进度或重建另一个任务来制造成功。",
+      "flow": [
+        "RunAfterRecovery每秒用3秒期限检查原切换屏障，准备好才进入普通Run循环。",
+        "RunRebuild每200ms推进一次Step，本实例只运行一个重建循环。",
+        "取消时关闭消费者/重建依赖；失败日志仅输出白名单固定码且连续相同错误不刷屏。"
+      ],
+      "pitfalls": [
+        "ready失败不代表可以启动普通消费者；退出时尚未启动的消费者也要Close。",
+        "nil错误表示本步无故障，不代表整次重建已经成功。"
+      ],
+      "terms": {
+        "consumer": "尚未启动的普通Kafka消费者，恢复屏障解除后才运行。",
+        "ready": "检查当前持久SWITCHING是否已恢复的函数。",
+        "service": "具有有界Step及Close能力的重建worker。"
+      },
+      "symbols": {
+        "rebuilder": {
+          "fields": {
+            "Step": "在传入ctx下推进有限工作量，失败保留原进度等待下一次；nil不等于全任务终态。",
+            "Close": "关闭该worker持有的网络等资源，循环退出时调用。"
+          }
+        }
+      },
+      "source_sha256": "ae4eefac5fdfea6f7b1e60132c8e449e92ad6d426a661f5cdd1a73a46220cca9"
+    },
+    "services/search/internal/svc/rebuild_wiring.go": {
+      "purpose": "将Doc权威读取、ES客户端、Kafka日志读取和重建阶段用例装配为一个worker。",
+      "why": "装配集中在边界，使业务只依赖小接口；播种不使用事件账本，重放则必须按job创建专用consumer处理器。",
+      "flow": [
+        "NewRebuild验证search配置并固定accepted目录，供RPC开始/查询原任务。",
+        "NewRebuildWorker先建Doc、ES、Kafka依赖，失败时关闭已创建客户端，再装配Seeder、Replayer及Coordinator。",
+        "Step按播种→重放→协调执行；RecoveryReady只检查SQL持久SWITCHING，普通消费者还要自行做日志恢复。"
+      ],
+      "pitfalls": [
+        "RecoveryReady通过不等于普通消费者已初始化完成。",
+        "任一阶段失败当步返回，不能跳过失败阶段继续切换；Close释放日志和ES客户端。"
+      ],
+      "terms": {
+        "store": "search角色的私有Store，提供同一search数据库。",
+        "cfg": "本服务配置，Root必须是绝对路径且Search配置完整。"
+      },
+      "symbols": {
+        "RebuildWorker": {
+          "fields": {
+            "logic": "分批播种已接受Doc快照的Seeder。",
+            "replay": "按原L至H重放日志的Replayer。",
+            "index": "worker持有的ES客户端，退出时关闭。",
+            "logs": "worker持有的Kafka原日志读取客户端。",
+            "coordinator": "封H、验证并完成原切换的协调器。"
+          }
+        }
+      },
+      "source_sha256": "384f95f1ffbe62b7f74327ac0370324341e9a78d4270cd6621c1531b229a9067"
+    },
+    "services/search/internal/bootstrap/search.go": {
+      "purpose": "在启动边界注册Search RPC并启动消费、游标和重建后台任务。",
+      "why": "依赖装配失败必须影响就绪状态；不能仍注册一个表面可用但缺少业务能力的成功服务。",
+      "flow": [
+        "依次创建consumer、candidates、rebuild服务；失败时ReadyExtra保留相应错误并关闭已成功创建的资源。",
+        "完整重建worker装配成功后，ReadyExtra同时检查消费和候选服务。",
+        "后台启动RunAfterRecovery、RunCursors、RunRebuild，全部沿Store.Context退出；最后注册完整RPC。"
+      ],
+      "pitfalls": [
+        "重建worker装配失败时只注册无能力适配器，不能启动部分后台流程。",
+        "启动goroutine不等于已就绪，真实依赖检查仍必须通过。"
+      ],
+      "terms": {
+        "rpc": "当前内部gRPC服务器，注册冻结Search接口。",
+        "store": "本服务私有Store，包含DB、生命周期Context和ReadyExtra钩子。",
+        "configuration": "经平台加载的search角色配置，不从其他服务配置借权限。"
+      },
+      "symbols": {},
+      "source_sha256": "f577e95443dd514fbf21c0d3dce34219d59fd896db1c28016111ac02314ad692"
+    },
+    "services/search/cmd/search-rebuild-import/main.go": {
+      "purpose": "提供运维导入入口，只接受Search配置和受控inbox里的原Doc快照引用。",
+      "why": "命令行参数和路径可能包含敏感配置，因此flag错误不回显参数，stdout只交付原reference。",
+      "flow": [
+        "main创建Ctrl+C取消上下文，run解析-config/-operation/-snapshot-ref并拒绝多余参数。",
+        "核search角色及绝对Root，创建私有Store和CA验证器。",
+        "装配Importer导入原操作；仅允许固定错误码输出，成功打印reference JSON。"
+      ],
+      "pitfalls": [
+        "引用必须是合法.snapshot.json内容地址，不能把任意文件路径当导入目标。",
+        "IMPORT_COMMIT_UNKNOWN要求沿原号恢复；输出失败不能证明前面SQL没提交。"
+      ],
+      "terms": {
+        "args": "不含程序名的命令行参数列表。",
+        "output": "接收成功reference JSON的Writer，测试可注入缓冲区。"
+      },
+      "symbols": {},
+      "source_sha256": "7f5a4f3af05cf41d0fd184df25a972b4db46abcbec84963827a3a211215a8b7f"
+    },
+    "services/search/cmd/search-rebuild-prepare/main.go": {
+      "purpose": "提供运维准备入口，固定原Kafka起点并导出已提交的签名Prepare制品。",
+      "why": "新准备签名与已接受原号恢复分开；后者不能因当前叶证书到期而被迫重新签发或更换操作。",
+      "flow": [
+        "解析-config/-operation/-generation，目标代次必须是规范非零十进制。",
+        "只打开Search私有Store、ES和Kafka客户端，签名器由LoadSigner在新任务时延迟加载。",
+        "Prepare确认提交后计算内容地址，将原封装发布到search/outbox，最后输出reference JSON。"
+      ],
+      "pitfalls": [
+        "提交未知只报固定码并原号重试；不能把DB失败原文或私钥路径打进日志。",
+        "制品输出失败发生在业务提交之后，下一次仍恢复原Prepare，不能创建新任务。"
+      ],
+      "terms": {
+        "args": "命令行参数列表，包含search配置、原号和目标代次。",
+        "output": "成功结果reference JSON的输出流。"
+      },
+      "symbols": {},
+      "source_sha256": "5d773d7bf6e753a26466f5ff23c89e57333cb35c439d2d4b447bca1edd773e3e"
+    },
+    "services/search/main.go": {
+      "purpose": "声明Search服务的最小进程入口，把平台生命周期接到Search专属装配函数。",
+      "why": "公共TLS、配置、健康与退出流程由platform.Main统一负责，入口不复制四套底座实现。",
+      "flow": [
+        "main调用platform.Main，角色固定为search。",
+        "平台准备好RPC和Store后调用bootstrap.RegisterSearch接上业务。"
+      ],
+      "pitfalls": [
+        "第三参数nil表示此入口没有额外HTTP业务注册；不能因此省掉Search内部RPC装配。"
+      ],
+      "terms": {},
+      "symbols": {},
+      "source_sha256": "6fd0f2c97685568728fa1e05981962040e5946c0fcdf47972eafba6feba25e2a"
+    }
+  }
+}

@@ -1,0 +1,198 @@
+{
+  "version": 10,
+  "parentSHA256": "13a933e1903f730c01937d1d727b059ab02b212c8d57a9667ddf9c0acee715f2",
+  "sha256": "32f6515202eac5b7337e988c3dce665023f0c69c68afec5161902fcdda3d85ca",
+  "tables": [
+    {
+      "database": "document_db",
+      "name": "personal_transfer",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "document_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "document_title",
+          "type": "varchar(240)",
+          "nullable": false
+        },
+        {
+          "name": "source_user_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "target_user_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "source_space_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "expected_control_revision",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "revision",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "state",
+          "type": "varchar(16)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "offer_operation_id",
+          "type": "varchar(96)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "accept_operation_id",
+          "type": "varchar(96)",
+          "nullable": true,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "fixed_plan",
+          "type": "mediumblob",
+          "nullable": true
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(6)",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "database": "document_db",
+      "name": "resource_space_allocation",
+      "columns": [
+        {
+          "name": "resource_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "space_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "bytes",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "state",
+          "type": "varchar(16)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "operation_id",
+          "type": "varchar(96)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        }
+      ],
+      "primaryKey": [
+        "resource_id",
+        "space_id"
+      ]
+    },
+    {
+      "database": "document_db",
+      "name": "document_resource_allocation",
+      "columns": [
+        {
+          "name": "resource_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "document_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "space_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "transfer_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "state",
+          "type": "varchar(16)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        }
+      ],
+      "primaryKey": [
+        "resource_id",
+        "document_id",
+        "space_id"
+      ]
+    },
+    {
+      "database": "document_db",
+      "name": "document_capacity",
+      "columns": [
+        {
+          "name": "document_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "space_id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "bytes",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "node_bytes",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "operation_id",
+          "type": "varchar(96)",
+          "nullable": false,
+          "collation": "ascii_bin"
+        }
+      ],
+      "primaryKey": [
+        "document_id"
+      ]
+    }
+  ]
+}

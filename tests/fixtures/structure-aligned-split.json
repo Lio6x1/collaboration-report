@@ -1,0 +1,324 @@
+{
+  "input": {
+    "operation_id": "structure-alignment-original",
+    "expected_structure_id": "2",
+    "expected_control_revision": "1",
+    "changes": [
+      {
+        "type": "SPLIT_LEVEL2",
+        "chapter_id": "3"
+      }
+    ]
+  },
+  "fixed": {
+    "binding": {
+      "context": {
+        "operation_id": "structure-alignment-original",
+        "target": {
+          "document_id": "1",
+          "structure_id": "2"
+        }
+      }
+    },
+    "source": {
+      "structure": {
+        "id": "2",
+        "document_id": "1",
+        "entries": [
+          {
+            "node_id": "3",
+            "chapter_id": "3",
+            "unit_id": "4",
+            "kind": "CHAPTER",
+            "title": "整章",
+            "sort_order": 1,
+            "split_level2": false
+          }
+        ]
+      },
+      "changes": [
+        {
+          "type": "SPLIT_LEVEL2",
+          "chapter_id": "3"
+        }
+      ],
+      "drafts": [
+        {
+          "unit_id": "4",
+          "branch_id": "5",
+          "workspace_epoch": "1",
+          "lineage": {
+            "body": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "heading",
+                  "attrs": {
+                    "id": "aligned-1",
+                    "level": 2
+                  },
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "原节"
+                    }
+                  ]
+                },
+                {
+                  "type": "paragraph",
+                  "attrs": {
+                    "id": "aligned-2"
+                  },
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "原段落"
+                    }
+                  ]
+                },
+                {
+                  "type": "paragraph",
+                  "attrs": {
+                    "id": "aligned-3"
+                  },
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "保持原文"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "main_units": [
+      {
+        "document_id": "1",
+        "unit_id": "4",
+        "branch_id": "0",
+        "structure_id": "2",
+        "workspace_epoch": "1",
+        "operation_id": "structure-alignment-original",
+        "body_json_utf8": "eyJjb250ZW50IjpbeyJhdHRycyI6eyJpZCI6ImFsaWduZWQtMSIsImxldmVsIjoyfSwiY29udGVudCI6W3sidGV4dCI6IuWOn+iKgiIsInR5cGUiOiJ0ZXh0In1dLCJ0eXBlIjoiaGVhZGluZyJ9LHsiYXR0cnMiOnsiaWQiOiJhbGlnbmVkLTIifSwiY29udGVudCI6W3sidGV4dCI6IuWOn+auteiQvSIsInR5cGUiOiJ0ZXh0In1dLCJ0eXBlIjoicGFyYWdyYXBoIn0seyJhdHRycyI6eyJpZCI6ImFsaWduZWQtMyJ9LCJjb250ZW50IjpbeyJ0ZXh0Ijoi5L+d5oyB5Y6f5paHIiwidHlwZSI6InRleHQifV0sInR5cGUiOiJwYXJhZ3JhcGgifSx7ImF0dHJzIjp7ImlkIjoiYWxpZ25lZC1uZXctNCIsImxldmVsIjoyfSwiY29udGVudCI6W3sidGV4dCI6IuS4u+e6v+aWsOWinuiKgiIsInR5cGUiOiJ0ZXh0In1dLCJ0eXBlIjoiaGVhZGluZyJ9LHsiYXR0cnMiOnsiaWQiOiJhbGlnbmVkLW5ldy01In0sImNvbnRlbnQiOlt7ImF0dHJzIjp7ImFsdCI6IuS4u+e6v+WbvueJhyIsImF0b21Db2RlIjpmYWxzZSwiYXRvbUVtIjpmYWxzZSwiYXRvbUxpbmsiOm51bGwsImF0b21TdHJpa2UiOmZhbHNlLCJhdG9tU3Ryb25nIjpmYWxzZSwiaGVpZ2h0IjpudWxsLCJyZXNvdXJjZUlkIjoiOTAwNzE5OTI1NDc0MDk5NyIsInRpdGxlIjpudWxsLCJ3aWR0aCI6bnVsbH0sInR5cGUiOiJpbWFnZSJ9XSwidHlwZSI6InBhcmFncmFwaCJ9XSwidHlwZSI6ImRvYyJ9",
+        "body_hash": "W/gIkpQDWLMbkOCswHotFd2llPCB97p3A3IdfQCiNQs=",
+        "byte_size": "702",
+        "resource_ids": ["9007199254740997"]
+      }
+    ],
+    "drafts": [
+      {
+        "document_id": "1",
+        "unit_id": "4",
+        "branch_id": "5",
+        "structure_id": "2",
+        "workspace_epoch": "1",
+        "operation_id": "structure-alignment-original",
+        "body_json_utf8": "eyJjb250ZW50IjpbeyJhdHRycyI6eyJpZCI6ImFsaWduZWQtMSIsImxldmVsIjoyfSwiY29udGVudCI6W3sidGV4dCI6IuWOn+iKgiIsInR5cGUiOiJ0ZXh0In1dLCJ0eXBlIjoiaGVhZGluZyJ9LHsiYXR0cnMiOnsiaWQiOiJhbGlnbmVkLTIifSwiY29udGVudCI6W3sidGV4dCI6IuaUr+e6v+eLrOeri+aUueWKqCIsInR5cGUiOiJ0ZXh0In1dLCJ0eXBlIjoicGFyYWdyYXBoIn0seyJhdHRycyI6eyJpZCI6ImFsaWduZWQtMyJ9LCJjb250ZW50IjpbeyJ0ZXh0Ijoi5L+d5oyB5Y6f5paHIiwidHlwZSI6InRleHQifV0sInR5cGUiOiJwYXJhZ3JhcGgifSx7ImF0dHJzIjp7ImlkIjoicGVuZGluZy1vbmx5In0sImNvbnRlbnQiOlt7InRleHQiOiLlsJrmnKrlrqHmoLjov73liqAiLCJ0eXBlIjoidGV4dCJ9XSwidHlwZSI6InBhcmFncmFwaCJ9XSwidHlwZSI6ImRvYyJ9",
+        "body_hash": "046O19MNbTe43TbLJtm9tnuciB3GKmbZ+vPHEoVeXRY=",
+        "byte_size": "435",
+        "resource_ids": []
+      }
+    ]
+  },
+  "migration": {
+    "schema_version": "structure-migration-v1",
+    "changes": [
+      {
+        "type": "SPLIT_LEVEL2",
+        "chapter_id": "3",
+        "source_units": ["4"],
+        "targets": [
+          {
+            "key": "3:SPLIT:0",
+            "kind": "SECTION",
+            "title": "原节",
+            "main_body": {
+              "type": "doc",
+              "content": [
+                {
+                  "attrs": {
+                    "id": "aligned-2"
+                  },
+                  "content": [
+                    {
+                      "text": "原段落",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                },
+                {
+                  "attrs": {
+                    "id": "aligned-3"
+                  },
+                  "content": [
+                    {
+                      "text": "保持原文",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ]
+            },
+            "draft_body": {
+              "type": "doc",
+              "content": [
+                {
+                  "attrs": {
+                    "id": "aligned-2"
+                  },
+                  "content": [
+                    {
+                      "text": "支线独立改动",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                },
+                {
+                  "attrs": {
+                    "id": "aligned-3"
+                  },
+                  "content": [
+                    {
+                      "text": "保持原文",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                },
+                {
+                  "attrs": {
+                    "id": "pending-only"
+                  },
+                  "content": [
+                    {
+                      "text": "尚未审核追加",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ]
+            },
+            "boundary": {
+              "heading": {
+                "attrs": {
+                  "id": "aligned-1",
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "text": "原节",
+                    "type": "text"
+                  }
+                ],
+                "type": "heading"
+              }
+            },
+            "source_ranges": [
+              {
+                "source_unit_id": "4",
+                "source_scope": "WHOLE_UNIT",
+                "start_boundary": "aligned-1",
+                "end_boundary": "aligned-new-4",
+                "main_block_ids": ["aligned-1", "aligned-2", "aligned-3"],
+                "draft_block_ids": ["aligned-1", "aligned-2", "aligned-3", "pending-only"]
+              }
+            ]
+          },
+          {
+            "key": "3:SPLIT:1",
+            "kind": "SECTION",
+            "title": "主线新增节",
+            "main_body": {
+              "type": "doc",
+              "content": [
+                {
+                  "attrs": {
+                    "id": "aligned-new-5"
+                  },
+                  "content": [
+                    {
+                      "attrs": {
+                        "alt": "主线图片",
+                        "title": null,
+                        "width": null,
+                        "height": null,
+                        "atomStrong": false,
+                        "atomEm": false,
+                        "atomCode": false,
+                        "atomStrike": false,
+                        "atomLink": null,
+                        "resourceId": "9007199254740997"
+                      },
+                      "type": "image"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ]
+            },
+            "draft_body": {
+              "type": "doc",
+              "content": [
+                {
+                  "attrs": {
+                    "id": "aligned-new-5"
+                  },
+                  "content": [
+                    {
+                      "attrs": {
+                        "alt": "主线图片",
+                        "title": null,
+                        "width": null,
+                        "height": null,
+                        "atomStrong": false,
+                        "atomEm": false,
+                        "atomCode": false,
+                        "atomStrike": false,
+                        "atomLink": null,
+                        "resourceId": "9007199254740997"
+                      },
+                      "type": "image"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ]
+            },
+            "boundary": {
+              "heading": {
+                "attrs": {
+                  "id": "aligned-new-4",
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "text": "主线新增节",
+                    "type": "text"
+                  }
+                ],
+                "type": "heading"
+              }
+            },
+            "source_ranges": [
+              {
+                "source_unit_id": "4",
+                "source_scope": "WHOLE_UNIT",
+                "start_boundary": "aligned-new-4",
+                "end_boundary": null,
+                "main_block_ids": ["aligned-new-4", "aligned-new-5"],
+                "draft_block_ids": ["aligned-new-4", "aligned-new-5"]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
