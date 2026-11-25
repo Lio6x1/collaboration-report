@@ -187,7 +187,7 @@ prepare没有 `--cert`、`--key`或公有CA接入开关。Edge同一份证书也
 
 prepare提供 `--smtp-address`和 `--smtp-from`，显式传入地址会关闭开发收件器。当前 `serviceConfiguration`为外部地址生成完整SMTP段：465端口默认tls，其它端口默认starttls，credentialsFile指向 `/app/.runtime/private/smtp-credentials.json`。这只生成配置引用，不生成邮箱授权码文件，也不证明该供应商支持相应模式。[SMTP适配器](../../services/account/internal/client/smtp.go)支持tls/starttls与可选CA文件，始终核验证书/主机名；development仍只接受数值loopback明文且不发送凭据。
 
-Windows按[当前账号教程](../tutorial/continuous/lessons/account/01-authentication.md)配置，`configure-smtp.mjs`限定Windows。服务器首次准备若使用自己的QQ发信邮箱，把前面的首次prepare命令替换为下例；只在新目录首次执行，不向已有manifest传不同参数强行改绑定：
+Windows 的发信配置见[SMTP 设置](../../configs/README.md#smtp设置)。Linux 服务器首次准备如使用自己的 QQ 发信邮箱，用下例替换首次 `prepare` 命令。已有实例沿用原准备参数。
 
 ```bash
 # 工作目录：服务器上的自己的完整源码；先将域名与发件地址替换为实际值。
@@ -300,7 +300,7 @@ sudo node scripts/server-compose.mjs up --directory /srv/collaboration-report/pr
 sudo node scripts/server-compose.mjs status --directory /srv/collaboration-report/private
 ```
 
-初始化重试核验原迁移、原秘密与完整权限，不重复建库、不重新轮换密码。若报`SERVER_ACCOUNT_GRANT_OPTION_NOT_ALLOWED`，已有账号出现计划外转授权能力，保留现场并核对原授权，不能清卷或自动撤权绕过；修正与实际核验见[发行集中审查记录](../delivery/CURRENT-REVIEW.md)。Search仍使用原group/物理日志身份。监督器为新进程产生新的启动标记，旧PID登记不构成结束证明；原恢复逻辑继续核验实际进程事实，未知结果不会被改成ACK。应用正常healthy后，仍需复核代表性原数据。
+初始化重试核验原迁移、原秘密与已有权限。若报 `SERVER_ACCOUNT_GRANT_OPTION_NOT_ALLOWED`，请保留现场并核对账号是否多了转授权能力。Search 沿用原消费组和物理日志身份。监督器为新进程生成启动标记，恢复流程核验旧进程是否实际退出。应用恢复健康后，复核代表性原数据。
 
 ## 一致备份与恢复边界
 

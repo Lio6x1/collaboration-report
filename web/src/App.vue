@@ -256,37 +256,37 @@ onUnmounted(() => {
 <template>
   <div class="app-shell">
     <a class="skip-link" href="#main-content" @click.prevent="focusContent">跳到页面内容</a>
-    <header class="app-header">
-      <a href="/" @click="actionsBlocked && $event.preventDefault()" class="brand"
-        ><span class="brand-mark" aria-hidden="true"><AppIcon name="page" /></span
-        ><span>协作报告<small>COLLABORATION REPORT</small></span></a
-      >
+    <header class="app-header" :class="{ 'is-guest': !user }">
+      <a href="/" @click="actionsBlocked && $event.preventDefault()" class="brand">
+        <span class="brand-mark" aria-hidden="true"><AppIcon name="page" /></span>
+        <span>协作报告</span>
+      </a>
       <nav v-if="!publicDocument" aria-label="主导航">
         <button
           v-if="user"
           :disabled="actionsBlocked"
           @click="navigate('workspace')"
-          :class="{ active: view === 'workspace' }"
+          :aria-current="view === 'workspace' ? 'page' : undefined"
         >
           <AppIcon name="page" />工作台</button
         ><button
           :disabled="actionsBlocked"
           @click="openSearch()"
-          :class="{ active: view === 'search' }"
+          :aria-current="view === 'search' ? 'page' : undefined"
         >
           <AppIcon name="search" />正式版搜索</button
         ><button
           v-if="user"
           :disabled="actionsBlocked"
           @click="navigate('organization')"
-          :class="{ active: view === 'organization' }"
+          :aria-current="view === 'organization' ? 'page' : undefined"
         >
           <AppIcon name="people" />组织</button
         ><button
           v-if="user"
           :disabled="actionsBlocked"
           @click="navigate('notifications')"
-          :class="{ active: view === 'notifications' }"
+          :aria-current="view === 'notifications' ? 'page' : undefined"
         >
           <AppIcon name="bell" />通知
         </button>
@@ -297,7 +297,7 @@ onUnmounted(() => {
               v-if="user"
               :disabled="actionsBlocked"
               @click="navigate('account')"
-              :class="{ active: view === 'account' }"
+              :aria-current="view === 'account' ? 'page' : undefined"
             >
               账号设置
             </button>
@@ -305,7 +305,7 @@ onUnmounted(() => {
               v-if="user"
               :disabled="actionsBlocked"
               @click="navigate('governance')"
-              :class="{ active: view === 'governance' }"
+              :aria-current="view === 'governance' ? 'page' : undefined"
             >
               留存治理
             </button>
@@ -313,7 +313,7 @@ onUnmounted(() => {
               v-if="user"
               :disabled="actionsBlocked"
               @click="navigate('transfers')"
-              :class="{ active: view === 'transfers' }"
+              :aria-current="view === 'transfers' ? 'page' : undefined"
             >
               个人转让
             </button>
@@ -433,6 +433,5 @@ onUnmounted(() => {
         <AccountPanel v-else :key="user.id" @succession="openSuccession"
       /></template>
     </main>
-    <footer>协作报告 · 让每一次共同创作都有迹可循</footer>
   </div>
 </template>

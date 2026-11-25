@@ -46,7 +46,7 @@ go -C services/search test -mod=readonly -p=1 -count=1 -v ./...
 & '.runtime/toolchains/node-v24.19.0-win-x64/node.exe' --no-maglev --test --test-concurrency=1 tests/publication/public-reading-capacity.test.mjs
 ```
 
-故障测试会核验本项目owner，并在finally恢复原依赖和Search进程。Search只读Doc专用mTLS权威快照，不能读取Doc私有库；原Canal消息摘要与后来权威正文摘要分别记账，成功顺序为ES、应用SQL、完整记录checkpoint SQL、同步Kafka提交。ES/SQL未知时保持原消息重读，隐藏状态保留单调水位墓碑。完整消费者及本轮政策证据见[第六批检查点](../delivery/CURRENT-REVIEW.md)。
+故障测试会核验本项目 owner，并在 `finally` 恢复原依赖和 Search 进程。Search 通过 mTLS 读取 Document 的权威快照。消费者分别记录 Canal 消息和权威正文的摘要，依次确认 ES 更新、SQL 应用记录和 SQL 检查点，然后提交 Kafka 消费位点。遇到未知结果时重读原消息，隐藏状态保留单调水位。
 
 候选RPC和单链关闭恢复切片使用同一实际配置。应用先以原Search代次锁预留游标，再调用ES；查询成功确认最新PIT后才返回批锚点。RPC批固定100、原绝对期限30秒不续期，最多128条未释放链/1024行总注册；不把这些开发初值当吞吐承诺。候选只供真实Doc mTLS调用，浏览器经Doc `/v1/search` 取得当前授权、固定正式内容及联合输出保护后的页。
 
@@ -78,7 +78,7 @@ $env:COLLAB_TEST_SEARCH_CONFIG = 'D:/job/golang/projects/collaboration-report/.r
 & '.runtime/toolchains/node-v24.19.0-win-x64/node.exe' --no-maglev --test --test-concurrency=1 tests/search/pages-output.test.mjs
 ```
 
-入口独立1/1、七篇真实产品组7/7和搜索输出组4项实际通过、零跳过。输出故障组串行持有自有行锁并暂停本owner Edge，finally恢复原进程和锁，不能并行运行其它故障组。Windows响应schema管道显式按UTF8解码，不依赖Python默认GBK。自然页到期、真实Search退出恢复及隔离partial随后各1/1通过，边界及首次FAIL见[最新状态](../delivery/CURRENT-REVIEW.md)；规模、完整浏览器页面及整批06仍待验收。
+输出故障组串行持有隔离实例的行锁并暂停对应 Edge 进程，结束时恢复原进程和锁。请单独运行该组。Windows 响应 Schema 校验使用 UTF-8 解码。
 
 ```powershell
 & '.runtime/toolchains/node-v24.19.0-win-x64/node.exe' --no-maglev --test --test-concurrency=1 tests/search/pages-expiry.test.mjs tests/search/pages-recovery.test.mjs
@@ -134,5 +134,3 @@ $env:GOCACHE = 'D:/job/golang/projects/collaboration-report/.runtime/go-cache'
 种子和追近期间继续服务旧索引。封存固定H进入SWITCHING后，搜索暂时明确不可用；后台完成逐页核验后才切alias和SQL。中断后保留原任务与文件，恢复同一owner服务；不要删任务、改checkpoint、解除屏障或新建操作绕过未知状态。ES已到目标但SQL仍为源时由原任务补完SQL，不手动再增加代次。已有旧物理索引和应用账本不会自动删除。
 
 005以后普通消费者固定cluster/topic UUID；既有消费历史首次升级需要匹配本owner先前签名prepare。`SEARCH_LOG_IDENTITY_BOOTSTRAP_REQUIRED`需要核对历史来源，不能通过清空checkpoint解决；`SEARCH_LOG_IDENTITY_CHANGED`表示当前日志身份不再匹配，必须保留阻断事实，不能仅按同名topic恢复。
-
-当前正常全流程与成功后重启证据见[重建实施记录](../tutorial/continuous/05-search.md)。中途未知结果恢复验收以该记录最新状态为准；本说明不替代尚未完成的整批第六批验收。

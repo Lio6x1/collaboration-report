@@ -1,5 +1,4 @@
-﻿param([switch]$Tutorial)
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
 $auditRoot = Join-Path $projectRoot 'artifacts/current-quality'
@@ -9,7 +8,7 @@ $env:GOMAXPROCS = '4'
 $env:GOCACHE = Join-Path $projectRoot '.runtime/go-cache'
 $env:PYTHONDONTWRITEBYTECODE = '1'
 $results = [Collections.Generic.List[object]]::new()
-# 只运行离线规则和构建；真实数据库、故障演练由教程06在独立实例串行执行。
+# 运行离线规则和构建。数据库及故障恢复用例须在独立实例执行。
 function Check([string]$Name, [scriptblock]$Run) {
     $log = Join-Path $auditRoot ($Name + '.txt')
     $started = [DateTime]::UtcNow
@@ -62,11 +61,6 @@ Check 'generated-content' { & node --no-maglev scripts/generate-content.mjs --ch
 Check 'schemas' { & python scripts/validate-schemas.py }
 Check 'frontend-types' { & ./scripts/npm.ps1 run typecheck --workspace web }
 Check 'frontend-build' { & ./scripts/npm.ps1 run build --workspace web }
-if ($Tutorial) {
-    Check 'tutorial' { & python scripts/verify-tutorial.py }
-    Check 'teaching-boundaries' { & python docs/tutorial/continuous/test_course.py -v }
-    Check 'teaching-material' { & python docs/tutorial/continuous/maintenance/audit.py }
-}
 $failed = @($results | Where-Object { $_.exitCode -ne 0 })
 @{state=$(if ($failed.Count) {'FAIL'} else {'PASS'}); scope='OFFLINE_STATIC_UNIT_BUILD'; checks=$results.ToArray(); servicesStarted=$false; completedAt=[DateTime]::UtcNow.ToString('o')} |
     ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $auditRoot 'verification.json') -Encoding utf8

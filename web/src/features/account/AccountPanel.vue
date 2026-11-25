@@ -12,6 +12,7 @@ import type { Challenge, ChallengeCreate } from '../../../../contracts/http/gene
 import { user, prepareLogin, afterCredentialChange, validNewPassword } from './session';
 import { accountNumber } from './identity';
 import ActionStatus from '../../components/ActionStatus.vue';
+import AppIcon from '../../components/AppIcon.vue';
 import AccountClosurePanel from './AccountClosurePanel.vue';
 const emit = defineEmits<{ succession: [kind: string, target: string] }>();
 const copyingNumber = ref(false),
@@ -302,25 +303,22 @@ async function changeEmail() {
   <AccountClosurePanel @succession="(kind, target) => emit('succession', kind, target)" />
   <section v-if="!user" class="auth-layout">
     <div class="auth-copy">
-      <span class="eyebrow">共同完成一份有条理的报告</span>
-      <h1>共同写作，<br /><span>每一步都有迹可循。</span></h1>
-      <p>从知识库组织文档，用明确的权限分配协作范围。每一次管理变更都能追踪到原操作。</p>
-      <!-- 纯装饰的纸页与批注构成产品识别，不伪装成用户的真实文档或实时协作状态。 -->
-      <div class="auth-illustration" aria-hidden="true">
-        <div class="illustration-back"></div>
-        <div class="illustration-page">
-          <span class="illustration-kicker">COLLABORATION / 共同创作</span>
-          <strong>从一个想法<br />到一份完整报告</strong>
-          <div class="illustration-lines"><i></i><i></i><i></i></div>
-          <span class="illustration-note">讨论 · 修订 · 定稿</span>
-          <span class="illustration-rule"></span>
-          <span class="illustration-number">01 / 一起完成</span>
+      <h1>一起写好<br /><span>每一份报告</span></h1>
+      <p>在知识库整理文档，按章节协作、审核和发布。</p>
+      <!-- 首页只示意写作流程，避免把样例显示为用户的真实文档或在线协作状态。 -->
+      <div class="auth-example" aria-hidden="true">
+        <div class="auth-example-heading">
+          <span class="auth-example-icon"><AppIcon name="page" /></span>
+          <div><small>示例文档</small><strong>团队项目报告</strong></div>
         </div>
-        <div class="illustration-label"><span></span>清楚的权限，可靠的版本</div>
+        <div class="auth-example-steps">
+          <span>共同编辑</span><AppIcon name="arrow" /><span>按章审核</span
+          ><AppIcon name="arrow" /><span>正式发布</span>
+        </div>
       </div>
     </div>
     <div class="panel auth-card">
-      <div class="tabs" role="tablist">
+      <div class="tabs" role="tablist" aria-label="账号操作">
         <button
           :disabled="actionsBlocked"
           role="tab"
@@ -348,7 +346,9 @@ async function changeEmail() {
         </button>
       </div>
       <h2>
-        {{ mode === 'login' ? '欢迎回来' : mode === 'signup' ? '创建账号' : '验证邮箱并找回密码' }}
+        {{
+          mode === 'login' ? '登录工作台' : mode === 'signup' ? '创建账号' : '验证邮箱并找回密码'
+        }}
       </h2>
       <p v-if="mode === 'login'" class="hint">本标签页独立登录，其他标签页可以使用不同账号。</p>
       <form @submit.prevent="submit">

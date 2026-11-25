@@ -1,10 +1,10 @@
 # 本机与服务器部署
 
-交付顺序是先体验现成Windows产品，再照教程写自己的后端、复用前端并本机验收，最后把自己的已验收版本部署到Ubuntu 24.04服务器。本机用于开发、学习和并发演示；服务器用于他人实际体验，两边保留完整功能。服务器当前为2 vCPU、2GiB内存、40GiB磁盘，按正常Docker部署准备，不另设低配专项或容量专项。Linux完整配置与隔离整站验证已提供，见[Linux部署](LINUX.md)；用户实际服务器部署仍待学习版验收后进行。自己的当前学习实例先按[连续路线装配页](../tutorial/continuous/06-integration.md)初始化，不照抄下文体验产品的绝对路径。
+本页说明 Windows 单机开发、发行配置和升级。Ubuntu 24.04 的 Docker Compose 安装由 [Linux 部署](LINUX.md)说明。
 
 ## Windows单机发行与升级
 
-Windows部署使用Docker Desktop Linux容器和四服务监督器。当前支持真实TLS/STARTTLS发信，按[SMTP配置](../tutorial/continuous/reference/smtp.md)连接自己的邮件供应商。域名、受信证书、SMTP送达及OSS均需在部署环境实际验证；本地测试不代表用户服务器已上线。
+Windows 部署使用 Docker Desktop 的 Linux 容器和四服务监督器。连接发信供应商时按[SMTP 设置](../../configs/README.md#smtp设置)配置 TLS 或 STARTTLS。域名、证书、邮件和 OSS 需在部署环境分别验证。
 
 ## 新机器准备
 
@@ -13,7 +13,6 @@ Windows部署使用Docker Desktop Linux容器和四服务监督器。当前支�
 安装完整Node24.19.0、Go1.25.10、Docker Desktop、OpenSSL、Python及Edge。Docker镜像使用仓库已有摘要，npm用package-lock，Go构建使用各服务go.mod/go.sum和readonly；不要复制开发机口令、关闭高水位或用户数据来初始化空环境。导出需要Pandoc3.8，先确认`pandoc --version`首行为`pandoc 3.8`；Windows默认以已安装Edge作PDF转换，Playwright来自锁文件，无需另外下载Chromium。路径可含空格，下面均在项目根运行。
 
 ```powershell
-Set-Location 'D:\job\golang\projects\collaboration-report'
 $env:GOWORK = 'off'
 ./scripts/npm.ps1 ci
 ./scripts/npm.ps1 run build --workspace web

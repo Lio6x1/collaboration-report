@@ -16,7 +16,7 @@ const emit = defineEmits<{
 }>();
 </script>
 <template>
-  <fieldset :disabled="disabled">
+  <fieldset class="editor-tools" :disabled="disabled">
     <p class="hint">
       正文小四（12 磅）。选中文字设置强调；段落格式作用于光标所在段落或选中的多段。
     </p>

@@ -125,10 +125,15 @@ function showLibraries() {
   createVisible.value = false;
   synchronizeLocation();
 }
-function coverTone(id: string) {
-  // 稳定的书籍封面配色无需逐库预取文件，不伪造后端尚未提供的封面上传能力。
+function libraryTone(id: string) {
+  // 图标配色随库身份固定，访问范围由可见性文字表达。
   return Number(BigInt(id) % 5n);
 }
+const libraryVisibility = {
+  PUBLIC: '正式版公开',
+  SPACE_MEMBERS: '正式版限空间成员',
+  COLLABORATORS: '正式版限协作者',
+};
 function spaceName(s: Space) {
   return s.kind === 'PERSONAL'
     ? '个人空间'
@@ -624,11 +629,8 @@ function kbDeleted() {
   <div class="workspace-shell" :class="{ 'workspace-embedded': organization }">
     <aside class="workspace-sidebar">
       <div class="workspace-identity">
-        <span class="workspace-monogram"><AppIcon name="page" /></span>
-        <div>
-          <strong>{{ organization?.name ?? '我的空间' }}</strong
-          ><small>整理知识，协同写作</small>
-        </div>
+        <span class="workspace-monogram"><AppIcon name="library" /></span>
+        <strong>{{ organization?.name ?? '工作空间' }}</strong>
       </div>
       <section v-if="!organization" class="workspace-scope-picker" aria-label="空间切换">
         <div class="workspace-scope" role="group" aria-label="空间类型">
@@ -685,7 +687,7 @@ function kbDeleted() {
           :disabled="actionsBlocked"
           @click="showLibraries"
         >
-          <AppIcon name="page" />知识库
+          <AppIcon name="library" />知识库
         </button>
         <button
           :aria-current="section === 'documents' && !kbId ? 'page' : undefined"
@@ -735,22 +737,19 @@ function kbDeleted() {
             ><span v-if="kbId">{{ currentKB?.name }}</span>
           </nav>
           <h1>{{ contentTitle }}</h1>
-          <p class="hint">
+          <p v-if="!['libraries', 'documents'].includes(section)" class="hint">
             {{
-              section === 'libraries'
-                ? '从一本知识库，开始今天的阅读与创作。'
-                : section === 'applications'
-                  ? '查看你发起的个人文档协作申请。'
-                  : section === 'trash'
-                    ? '查找和恢复当前空间中你有权管理的已删除文档。'
-                    : section === 'settings'
-                      ? '管理知识库信息、成员和访问范围。'
-                      : '选择一篇文档，继续你的工作。'
+              section === 'applications'
+                ? '查看你发起的个人文档协作申请。'
+                : section === 'trash'
+                  ? '查找和恢复当前空间中你有权管理的已删除文档。'
+                  : '管理知识库信息、成员和访问范围。'
             }}
           </p>
         </div>
         <div class="page-actions">
           <button :disabled="actionsBlocked" @click="onRefresh">
+            <AppIcon name="refresh" />
             {{ busy ? '刷新中…' : organization ? '刷新组织内容' : '刷新工作台' }}
           </button>
           <button
@@ -803,14 +802,14 @@ function kbDeleted() {
         :aria-busy="busy || kbLoading"
       >
         <div class="section-title library-tools">
-          <span class="count-label">本页 {{ kbs.length }} 个知识库</span>
-          <form class="inline-form" role="search" @submit.prevent="action.run(searchKBs, '')">
+          <span class="directory-count">本页 {{ kbs.length }} 个知识库</span>
+          <form class="library-filter" role="search" @submit.prevent="action.run(searchKBs, '')">
             <label class="library-search"
               ><AppIcon name="search" /><input
                 v-model="kbQuery"
                 type="search"
                 aria-label="搜索知识库"
-                placeholder="搜索全部知识库"
+                placeholder="搜索知识库"
                 maxlength="100"
                 :disabled="actionsBlocked || kbLoading"
             /></label>
@@ -820,16 +819,21 @@ function kbDeleted() {
         <ul class="library-grid">
           <li v-for="library in kbs" :key="library.id">
             <button
-              class="library-book"
-              :class="'cover-tone-' + coverTone(library.id)"
+              class="library-card"
+              :class="'library-tone-' + libraryTone(library.id)"
               :aria-label="'打开知识库：' + library.name"
+              :aria-describedby="'library-visibility-' + library.id"
               :disabled="actionsBlocked"
               @click="openLibrary(library.id)"
             >
-              <span class="book-kicker">KNOWLEDGE / 知识库</span
-              ><span class="book-title">{{ library.name }}</span>
-              <span class="book-art" aria-hidden="true"><AppIcon name="page" /></span
-              ><span class="book-open">打开知识库<AppIcon name="arrow" /></span>
+              <span class="library-card-top">
+                <span class="library-card-icon"><AppIcon name="library" /></span>
+                <AppIcon name="arrow" />
+              </span>
+              <span class="library-card-title">{{ library.name }}</span>
+              <span :id="'library-visibility-' + library.id" class="library-visibility">
+                {{ libraryVisibility[library.visibility_policy] }}
+              </span>
             </button>
           </li>
         </ul>
@@ -875,7 +879,7 @@ function kbDeleted() {
         :aria-busy="busy || docLoading"
       >
         <div class="section-title">
-          <span class="count-label">{{
+          <span class="directory-count">{{
             busy || docLoading ? '正在读取…' : '本页 ' + docs.length + ' 篇文档'
           }}</span>
         </div>
@@ -1036,160 +1040,153 @@ function kbDeleted() {
 </template>
 
 <style scoped>
-.library-breadcrumb,
-.library-footer,
-.library-search {
+.library-breadcrumb {
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-.library-breadcrumb {
-  flex: 1;
   flex-wrap: wrap;
+  gap: 8px;
 }
 .library-gallery {
-  margin: 12px 0;
+  margin: 0 0 20px;
+}
+.library-tools {
+  gap: 10px 16px;
+  margin-bottom: 16px;
+}
+.directory-count {
+  color: var(--muted);
+  font-size: var(--ui-font-meta);
+  font-variant-numeric: tabular-nums;
+}
+.library-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  width: min(100%, 360px);
+  margin: 0;
 }
 .library-search {
-  min-width: 220px;
-  max-width: 360px;
+  position: relative;
+  display: block;
+}
+.library-search .app-icon {
+  position: absolute;
+  inset-inline-start: 13px;
+  top: 50%;
+  width: 17px;
+  height: 17px;
+  color: var(--muted);
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 .library-search input {
+  padding-inline-start: 39px;
   margin: 0;
 }
 .library-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 28px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 218px), 1fr));
+  gap: 16px;
   list-style: none;
   padding: 0;
-  margin: 28px 0;
+  margin: 0 0 22px;
 }
 .library-grid li {
   min-width: 0;
-  max-width: 250px;
 }
-.library-book {
-  position: relative;
+.library-card {
+  --library-tint: #e6f2ea;
+  --library-ink: #245c49;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   text-align: left;
   width: 100%;
-  aspect-ratio: 3 / 4;
-  padding: 22px 22px 18px 28px;
-  overflow: hidden;
-  border: 1px solid #ffffff30;
-  border-radius: 5px 15px 15px 5px;
-  color: #fffefa;
-  background: linear-gradient(145deg, #58705f, #233e35);
-  box-shadow:
-    0 10px 22px #263e3314,
-    inset 7px 0 0 #00000012;
-  transition:
-    transform 0.18s ease,
-    box-shadow 0.18s ease;
+  min-height: 141px;
+  height: 100%;
+  justify-content: flex-start;
+  gap: 5px;
+  padding: 17px 18px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
 }
-.library-book:hover:not(:disabled) {
-  transform: translateY(-5px);
-  box-shadow: 0 16px 28px #263e3329;
+.library-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: var(--line-strong);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
 }
-.library-book:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 5px;
+.library-tone-1 {
+  --library-tint: #f2ebdd;
+  --library-ink: #745527;
 }
-.cover-tone-1 {
-  background: linear-gradient(140deg, #9a6f49, #593b2f);
+.library-tone-2 {
+  --library-tint: #e8edf9;
+  --library-ink: #435e90;
 }
-.cover-tone-2 {
-  background: linear-gradient(140deg, #626f86, #283547);
+.library-tone-3 {
+  --library-tint: #f0eaf6;
+  --library-ink: #72568d;
 }
-.cover-tone-3 {
-  background: linear-gradient(140deg, #8d747e, #503e55);
+.library-tone-4 {
+  --library-tint: #e7eee8;
+  --library-ink: #4c6355;
 }
-.cover-tone-4 {
-  background: linear-gradient(140deg, #898b62, #474e36);
+.library-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 9px;
 }
-.book-kicker {
-  position: relative;
-  z-index: 1;
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  opacity: 0.75;
-}
-.book-title {
-  position: relative;
-  z-index: 1;
-  margin-top: 24px;
-  font-size: clamp(21px, 2vw, 27px);
-  line-height: 1.35;
-  font-weight: 650;
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.book-art {
-  position: absolute;
-  right: -30px;
-  bottom: 36px;
-  width: 180px;
-  height: 180px;
-  border: 1px solid #ffffff18;
-  border-radius: 50%;
-  transform: rotate(-20deg);
+.library-card-icon {
   display: grid;
   place-items: center;
+  width: 37px;
+  height: 37px;
+  border-radius: 9px;
+  background: var(--library-tint);
+  color: var(--library-ink);
 }
-.book-art :deep(svg) {
-  width: 110px;
-  height: 110px;
-  opacity: 0.07;
+.library-card-top > .app-icon {
+  width: 17px;
+  height: 17px;
+  color: var(--muted);
 }
-.book-open {
-  position: relative;
-  z-index: 1;
-  margin-top: auto;
-  padding-top: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 14px;
-  opacity: 0.85;
+.library-card-title {
+  font-size: var(--ui-font-title);
+  line-height: 1.4;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
-.library-footer {
-  flex-wrap: wrap;
-  justify-content: space-between;
+.library-visibility {
+  font-size: var(--ui-font-meta);
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 @media (max-width: 600px) {
   .library-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
+    gap: 10px;
   }
-  .library-book {
-    padding: 16px 14px 14px 19px;
-    aspect-ratio: 3 / 4.3;
+  .library-card {
+    min-height: 119px;
+    padding: 12px;
   }
-  .book-title {
-    margin-top: 16px;
-    font-size: 20px;
+  .library-card-title {
+    font-size: 1rem;
   }
-  .book-kicker {
-    font-size: 9px;
+  .library-card-top {
+    margin-bottom: 5px;
   }
-  .book-open {
-    font-size: 12px;
+  .library-card-icon {
+    width: 32px;
+    height: 32px;
   }
-  .library-search {
+  .library-filter {
     width: 100%;
-    min-width: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .library-book {
-    transition: none;
   }
 }
 </style>

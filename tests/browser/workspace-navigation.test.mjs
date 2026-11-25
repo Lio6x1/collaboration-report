@@ -264,7 +264,9 @@ test('工作台固定入口、历史恢复和短弹窗保持各自的工作范�
     await page.getByRole('button', { name: '知识库设置', exact: true }).click();
     await expect(page.getByRole('tab', { name: '基本信息', exact: true })).toBeVisible();
     await page.getByRole('tab', { name: '成员', exact: true }).click();
-    await expect(page.getByRole('cell', { name: '导航体验', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('cell', { name: '导航体验 账号 00091001', exact: true }),
+    ).toBeVisible();
     await page.getByRole('button', { name: '返回文档目录', exact: true }).click();
     await page.getByRole('button', { name: '新建', exact: true }).click();
     const create = page.getByRole('dialog', { name: '新建内容', exact: true });

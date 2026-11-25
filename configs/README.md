@@ -46,7 +46,7 @@ Linux 的生成函数在 `scripts/server-configuration.mjs`，运行配置挂载
 - `configs/oss/aliyun-credentials.example.json` 只有字段说明占位值，不包含真正密钥。`configs/oss/aliyun-storage.example.json` 是存储参数示例，实际绑定以自己的运行配置为准。
 - 本次补充示例没有读取、覆盖或重生成现有运行配置。体验实例继续按已有配置运行。
 
-学习与部署入口：[本机体验](../docs/operations/LOCAL-EXPERIENCE.md)、[OSS 配置](../docs/operations/OSS.md)、[Linux 部署](../docs/operations/LINUX.md)、[学习版备份与恢复](../docs/tutorial/continuous/reference/backup-and-restore.md)。
+运行与部署见[Windows 运行](../docs/operations/WINDOWS.md)、[OSS 配置](../docs/operations/OSS.md)、[Linux 部署](../docs/operations/LINUX.md)和[备份与恢复](../docs/operations/BACKUP-RESTORE.md)。
 
 ## SMTP设置
 

@@ -124,13 +124,10 @@ defineExpose({ confirmSave: prepareSave });
     :aria-label="kind === 'MAIN' ? '主线编辑区' : '共同支线编辑区'"
     :aria-busy="openingBlocked || status.loading"
   >
-    <div class="section-title">
+    <div class="editor-status-bar">
       <h3>{{ kind === 'MAIN' ? '主线' : '共同支线' }}</h3>
-      <button :disabled="busy || openingBlocked || status.structurePaused" @click="emit('close')">
-        保存并返回阅读
-      </button>
+      <p class="save-state" aria-live="polite">{{ status.notice }}</p>
     </div>
-    <p class="save-state" aria-live="polite">{{ status.notice }}</p>
     <p v-if="syncMessage" class="sync-state" role="status">{{ syncMessage }}</p>
     <p v-if="status.problem || failure" class="error">{{ failure || status.problem }}</p>
     <DraftRecovery
@@ -180,6 +177,9 @@ defineExpose({ confirmSave: prepareSave });
         @click="flush"
       >
         {{ busy ? '正在保存…' : '保存当前修改' }}
+      </button>
+      <button :disabled="busy || openingBlocked || status.structurePaused" @click="emit('close')">
+        保存并返回阅读
       </button>
       <p v-if="status.receipt" class="success">当前修改已保存</p>
     </div>

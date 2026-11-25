@@ -112,15 +112,17 @@ test('document trash lives in the header menu and confirms before preserving the
       search = picker.getByLabel('查找协作者', { exact: true }),
       submit = page.getByRole('button', { name: '提交授权变更', exact: true });
     await expect(submit).toBeDisabled();
+    await picker.getByRole('button', { name: '选择协作者', exact: true }).click();
     await picker.getByRole('radio', { name: '操作验证（我）', exact: true }).check();
     await expect(submit).toBeEnabled();
+    await expect(search).not.toBeVisible();
+    await picker.getByRole('button', { name: '更换协作者', exact: true }).click();
     await search.fill('dadalfaf');
     await expect(
       picker.getByText('没有匹配的成员，请核对姓名或账号编号。', { exact: false }),
     ).toBeVisible();
     await expect(submit).toBeDisabled();
     await search.fill('小林');
-    await picker.getByRole('button', { name: '更多协作者', exact: true }).click();
     await expect(search).toHaveValue('小林');
     await picker.getByRole('radio', { name: '分页找到的小林', exact: true }).check();
     mkdirSync('artifacts/reported-usability/document-actions', { recursive: true });

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from '../../components/AppIcon.vue';
 import {
   UserFacingError,
   ApiError,
@@ -675,17 +676,21 @@ async function remove() {
     </nav>
     <header class="document-heading">
       <div>
-        <span class="eyebrow">{{
-          editorTarget ? 'WRITING STUDIO / 写作工作区' : 'DOCUMENT / 文档'
-        }}</span>
         <h1>{{ document?.title ?? '正在打开文档…' }}</h1>
-        <p v-if="document" class="document-meta">
-          <span class="status-pill">{{ document.main_locked ? '主线已锁定' : '主线开放' }}</span>
-          <span>{{ document.publication_state === 'PUBLISHED' ? '已有正式版' : '尚未发布' }}</span>
+        <p v-if="document && !editorTarget" class="document-meta">
+          <span class="status-pill" :class="{ 'status-draft': document.main_locked }">{{
+            document.main_locked ? '主线已锁定' : '主线开放'
+          }}</span>
+          <span
+            class="status-pill"
+            :class="{ 'status-draft': document.publication_state !== 'PUBLISHED' }"
+            >{{ document.publication_state === 'PUBLISHED' ? '已有正式版' : '尚未发布' }}</span
+          >
         </p>
       </div>
       <div v-if="!editorTarget && main" class="page-actions">
         <button :disabled="actionsBlocked || checkingReading" @click="refresh">
+          <AppIcon name="refresh" />
           {{ busy ? '刷新中…' : '刷新阅读' }}
         </button>
         <button
@@ -697,6 +702,7 @@ async function remove() {
             editChoices = false;
           "
         >
+          <AppIcon name="download" />
           导出文档
         </button>
         <button
@@ -709,6 +715,7 @@ async function remove() {
             exportVisible = false;
           "
         >
+          <AppIcon name="edit" />
           编辑文档
         </button>
         <AppPopover
@@ -731,7 +738,12 @@ async function remove() {
           </template>
         </AppPopover>
       </div>
-      <button v-else-if="editorTarget" :disabled="actionsBlocked" @click="closeEditor">
+      <button
+        v-else-if="editorTarget"
+        class="primary"
+        :disabled="actionsBlocked"
+        @click="closeEditor"
+      >
         保存并返回文档
       </button>
     </header>
@@ -756,12 +768,13 @@ async function remove() {
     <template v-if="document && main">
       <template v-if="editorTarget">
         <div class="editor-context">
-          <span>{{
-            editingKind === 'MAIN' ? '主线正文 · 直接保存' : '共同支线 · 与协作者实时同步'
-          }}</span>
-          <span>{{
-            unitLabel(readingUnits.find((entry) => entry.unit_id === editorTarget?.unit))
-          }}</span>
+          <span class="editor-context-unit"
+            ><AppIcon name="page" />{{
+              unitLabel(readingUnits.find((entry) => entry.unit_id === editorTarget?.unit))
+            }}</span
+          >
+          <span>{{ editingKind === 'MAIN' ? '保存到主线' : '与协作者实时同步' }}</span>
+          <span v-if="document.main_locked" class="status-pill status-draft">主线已锁定</span>
         </div>
         <UnitEditor
           ref="editor"
@@ -862,34 +875,35 @@ async function remove() {
             :main-bodies="bodies"
           />
         </div>
-        <nav class="document-tabs" role="tablist" aria-label="文档功能">
-          <button
-            v-for="item in panes.filter((item) => item.key !== 'settings' || managing)"
-            :id="'tab-' + item.key"
-            :key="item.key"
-            role="tab"
-            :aria-selected="pane === item.key"
-            :aria-controls="'pane-' + item.key"
-            :class="{ selected: pane === item.key }"
-            :disabled="actionsBlocked"
-            @click="selectPane(item.key)"
-          >
-            {{ item.name }}
-          </button>
-        </nav>
-        <div v-show="pane === 'read'" id="pane-read" role="tabpanel" aria-labelledby="tab-read">
-          <div class="reading-comment-tools">
-            <p class="hint">点击正文旁的评论标记查看讨论，也可以展开评论侧栏。</p>
+        <div class="document-navigation">
+          <nav class="document-tabs" role="tablist" aria-label="文档功能">
             <button
-              type="button"
-              :aria-expanded="readingCommentsOpen"
-              aria-controls="reading-comment-sidebar"
+              v-for="item in panes.filter((item) => item.key !== 'settings' || managing)"
+              :id="'tab-' + item.key"
+              :key="item.key"
+              role="tab"
+              :aria-selected="pane === item.key"
+              :aria-controls="'pane-' + item.key"
+              :class="{ selected: pane === item.key }"
               :disabled="actionsBlocked"
-              @click="readingCommentsOpen ? (readingCommentsOpen = false) : openReadingComments()"
+              @click="selectPane(item.key)"
             >
-              {{ readingCommentsOpen ? '收起评论' : '查看评论' }}
+              {{ item.name }}
             </button>
-          </div>
+          </nav>
+          <button
+            v-if="pane === 'read'"
+            class="reading-comment-toggle"
+            type="button"
+            :aria-expanded="readingCommentsOpen"
+            aria-controls="reading-comment-sidebar"
+            :disabled="actionsBlocked"
+            @click="readingCommentsOpen ? (readingCommentsOpen = false) : openReadingComments()"
+          >
+            <AppIcon name="comment" />{{ readingCommentsOpen ? '收起评论' : '查看评论' }}
+          </button>
+        </div>
+        <div v-show="pane === 'read'" id="pane-read" role="tabpanel" aria-labelledby="tab-read">
           <div v-if="commenting && commentAnchor" class="selection-comment-action" role="status">
             <span>已选中文字</span
             ><button
@@ -1352,15 +1366,37 @@ async function remove() {
   margin: 0.5rem 0;
   padding-left: 1.5rem;
 }
-.reading-comment-tools {
+.document-navigation {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
+  gap: 16px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--line);
 }
-.reading-comment-tools .hint {
+.document-navigation .document-tabs {
+  flex: 1 1 auto;
+  gap: 0 20px;
   margin: 0;
+  border: 0;
+}
+.document-navigation .document-tabs button {
+  padding: 9px 2px;
+}
+.reading-comment-toggle {
+  flex: 0 0 auto;
+}
+@media (max-width: 640px) {
+  .document-navigation {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .document-navigation .document-tabs {
+    flex-basis: 100%;
+    gap: 0 12px;
+  }
+  .reading-comment-toggle {
+    margin-left: auto;
+  }
 }
 .reading-layout.with-comments {
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
@@ -1369,9 +1405,6 @@ async function remove() {
 .with-comments > .document-outline {
   grid-column: 1 / -1;
   position: static;
-  padding: 0 0 12px;
-  border-right: 0;
-  border-bottom: 1px solid var(--line);
 }
 .reading-comment-sidebar {
   position: sticky;
@@ -1382,8 +1415,8 @@ async function remove() {
   overflow-wrap: anywhere;
   padding: 18px;
   border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--paper);
+  border-radius: 12px;
+  background: var(--surface);
   font-family: var(--ui-font-family, sans-serif);
   font-size: var(--ui-font-control);
 }

@@ -1,6 +1,6 @@
 # Windows运行与排错
 
-当前完整版本入口（2026-10-11）：首次准备看[完整部署](DEPLOYMENT.md)，已存在体验实例的重启看[本机体验](LOCAL-EXPERIENCE.md)；自己跟写的学习实例使用[连续路线装配命令](../tutorial/continuous/06-integration.md)，不能复制部署页中的体验产品固定路径。当前离线检查与真实实例验收分开进行，命令见下文。
+首次运行见[本机安装](DEPLOYMENT.md#新机器准备)。以下说明已有实例的重启、排错与验证。
 
 所有命令在项目根目录执行。需要Docker Desktop已启动并使用Linux容器，Go/Node/OpenSSL/Python在PATH。Python依赖`jsonschema`用于离线schema验收；Edge用于真实浏览器测试。PowerShell 5读中文脚本需要BOM，修改`.ps1`时请保留UTF-8 BOM；`.gitattributes`不转换其字节。
 
@@ -20,13 +20,29 @@ MySQL容器、卷、网络均有项目owner标记，Docker操作也检查Compose
 
 Windows 26200 / Node 24.15.0 的持续验收曾观察到原生退出 `0xC0000409`，包括显式关闭Maglev的后续样本，没有JavaScript崩溃栈，原因未查明。当前使用官方完整Node **24.19.0**及显式 `--no-maglev`；运行配置的验证通过不代表已证明早期原生退出根因。
 
-当前开发机官方完整分发位于`.runtime/toolchains/node-v24.19.0-win-x64`，只需在当前终端将该目录放到PATH前面，README给出了完整命令。其他机器安装完整24.19.0分发并确认`node --version`，不复制本机私密`.runtime`配置。停/启动分别运行 `node --no-maglev ./scripts/start.mjs stop`、`node --no-maglev ./scripts/start.mjs`；离线检查运行 `./scripts/verify-quality.ps1 -Tutorial`。此CLI选项沿监督器、Node服务和测试恢复助手传播，不传播`--test`/`--import`等调用参数；不把该选项写入`NODE_OPTIONS`。缺少显式选项时仍沿Node默认值，Go参数及原业务预算不变。
+安装 Node.js 24.19.0 后，用 `node --version` 核对当前终端版本。`--no-maglev` 由监督器、Node 服务和测试恢复助手显式继承。开发环境运行参数留在当前终端的命令中。
 
 第四批最终采用增量复验：原干净1304e1f的公共/Go/API已通过，62236fc只改两份浏览器测试及文档，完整浏览器另行54/54通过。`artifacts/batches/04/final-qualification.json`记录两轮commit和原日志摘要；原第十一轮`verification-attempt-11.json`保留FAIL。重新执行完整入口会产生新的独立结果，不能拿本机最后一次原FAIL误读成未记录的整次PASS。
 
 可选启动诊断还记录旧输出恢复、全部房间校验、资源确认恢复、门闩恢复与 RPC/HTTPS 监听阶段及耗时。协作服务计时从业务 `run()` 开始，不包含此前模块导入。观测到的 14～17 秒主要在全部既存房间校验；这不等于所有超时或原生退出都已归因，不能省略房间校验来换取 READY。
 
-当前离线入口为 `./scripts/verify-quality.ps1 -Tutorial`，输出在 `artifacts/current-quality/verification.json`。真实数据库、接口、WSS和整站测试按[课程06](../tutorial/continuous/06-integration.md)在独立实例运行；缺配置或SKIP不算真实业务通过。
+## 重启已有实例
+
+启动 Docker Desktop 后，在原项目根目录使用已有的 `.runtime/` 和数据卷。先核验已有容器归属并启动依赖，再启动应用。已初始化的实例无需重新执行首次配置。
+
+```powershell
+node --no-maglev scripts/release.mjs check
+if ($LASTEXITCODE -ne 0) { throw '现有实例检查失败' }
+node --no-maglev --input-type=module -e "import { ownedContainer, compose } from './scripts/runtime-lib.mjs'; for (const role of ['mysql','redis','kafka','es','canal']) ownedContainer(role); compose('up','-d','mysql','redis','kafka','es','canal');"
+if ($LASTEXITCODE -ne 0) { throw '现有依赖未启动' }
+node --no-maglev scripts/start.mjs
+```
+
+以 `SERVER_READY` 给出的 HTTPS 地址为准。用 `node --no-maglev scripts/start.mjs stop` 停应用，用 `node --no-maglev scripts/dev-environment.mjs stop` 停依赖。
+
+## 验证
+
+在项目根运行 `./scripts/verify-quality.ps1`，结果见 `artifacts/current-quality/verification.json`。真实数据库、接口、WSS 和故障恢复测试应按对应测试文件的准备条件，在独立实例串行运行。跳过用例须单独记录。
 
 第七批集中故障演练中两次协作服务启动因 `PROTOCOL_SEQUENCE_TIMEOUT` 失败；后续真实原PURGE恢复通过，根因尚未确定。设置诊断环境变量后仅打印 `ROOM_LIST`/`ROOM_CHECKPOINT`/`ROOM_UPDATE_LOG` 等固定阶段与稳定驱动码，不含原始SQL/凭据。未延长期限或跳过既存房间校验，继续在第八批检查启动容量。
 

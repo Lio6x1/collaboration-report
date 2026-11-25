@@ -1,12 +1,10 @@
 # 阿里云 OSS：Windows 配置与真实验证
 
-体验实例使用 Bucket `collaboration-report`、地域 `cn-shenzhen`、外网 Endpoint `https://oss-cn-shenzhen.aliyuncs.com`。SDK 锁定 `github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.6.0`，使用 V4 签名和官方 TLS 校验。适配器真实云读写、产品共享引用/清理及云对象冷备份/隔离恢复均已有实际验收，具体证据和首次失败保留在本页末尾；这不是你的新学习实例已经验收通过。
-
-当前教程已接续这些实现，源码与运行入口见[当前更新课](../tutorial/continuous/README.md)和[第12章](../tutorial/continuous/reference/backup-and-restore.md)。下面按**自己的Windows学习实例**配置，不把体验实例的目录、凭据或测试前缀照搬过去。
+Document 使用阿里云 OSS Go SDK、V4 签名和 TLS 访问对象。为每个实例指定自己的 Bucket、地域、Endpoint 和对象前缀。数据恢复步骤见[备份与恢复](BACKUP-RESTORE.md)。
 
 ## 你需要准备什么
 
-Bucket 保持标准存储、私有、阻止公共访问、版本控制从未开启。体验实例前缀为 `collabreport-tests/dev-fc4e4e3b/`；自己的学习实例另选独立前缀并同步RAM策略，例如 `collabreport-tests/learn-your-name/`。前缀是对象名的开头，不需要在控制台提前创建文件夹。程序只访问自己绑定前缀下的对象，不扫描或删除其它文件。
+Bucket 保持标准存储、私有、阻止公共访问、版本控制从未开启。为实例分配独立前缀，例如 `collaboration-report/dev/`，并与 RAM 策略保持一致。前缀是对象名的开头，无需在控制台提前创建文件夹。程序只访问该前缀下的对象。
 
 在阿里云控制台搜索「RAM 访问控制」，新建仅供本项目程序访问的 RAM 用户并创建 AccessKey。不要使用主账号 AccessKey。创建自定义权限策略，把 [策略模板](../../configs/oss/aliyun-ram-policy.example.json) 的 JSON 粘贴进去，再把策略授权给该 RAM 用户。策略只给指定前缀的对象读、写、私有 ACL 和删除，以及指定 Bucket 的版本状态读取，没有创建/删除 Bucket、改版本设置或列举全部 Bucket 的权限。若改前缀，策略与存储配置必须同步改，且只能在首次接入前确定。
 
@@ -14,10 +12,9 @@ Bucket 保持标准存储、私有、阻止公共访问、版本控制从未开�
 
 ## 将凭据保存在本机
 
-先沿[学习运行页](../tutorial/continuous/06-integration.md)生成自己的环境，确认正在自己的学习目录。以下命令只复制公开占位模板；已有文件不会覆盖：
+先按[Windows 初始化步骤](DEPLOYMENT.md#新机器准备)生成环境，在该实例的项目目录运行以下命令。命令会检查目标文件是否已存在。
 
 ```powershell
-Set-Location -LiteralPath 'D:/job/golang/projects/collaboration-report-learn-current'
 $lessonOSSRoot = (Get-Location).Path
 $lessonOSSCredentials = Join-Path $lessonOSSRoot '.runtime/private/oss-credentials.json'
 $lessonOSSSettings = Join-Path $lessonOSSRoot '.runtime/private/oss-settings.json'
